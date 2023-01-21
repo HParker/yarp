@@ -229,6 +229,48 @@ class ErrorsTest < Test::Unit::TestCase
     assert_errors expression("def ().a; end"), "def ().a; end", ["Expected to be able to parse receiver."]
   end
 
+  test "block beginning with 'do' and ending with '}'" do
+    expected = CallNode(
+      CallNode(nil, nil, IDENTIFIER("x"), nil, nil, nil, "x"),
+      DOT("."),
+      IDENTIFIER("each"),
+      nil,
+      ArgumentsNode(
+        [BlockNode(
+           KEYWORD_DO("do"),
+           nil,
+           Statements([CallNode(nil, nil, IDENTIFIER("x"), nil, nil, nil, "x")]),
+           MISSING("")
+         )]
+      ),
+      nil,
+      "each"
+    )
+
+    assert_errors expected, "x.each do x }", ["expected block beginning with 'do' to end with 'end'."]
+  end
+
+  test "block beginning with '{' and ending with 'end'" do
+    expected = CallNode(
+      CallNode(nil, nil, IDENTIFIER("x"), nil, nil, nil, "x"),
+      DOT("."),
+      IDENTIFIER("each"),
+      nil,
+      ArgumentsNode(
+        [BlockNode(
+           BRACE_LEFT("{"),
+           nil,
+           Statements([CallNode(nil, nil, IDENTIFIER("x"), nil, nil, nil, "x")]),
+           MISSING("")
+         )]
+      ),
+      nil,
+      "each"
+    )
+
+    assert_errors expected, "x.each { x end", ["expected block beginning with '{' to end with '}'."]
+  end
+
   private
 
   def assert_errors(expected, source, errors)

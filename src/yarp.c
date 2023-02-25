@@ -1793,13 +1793,13 @@ lex_keyword(yp_parser_t *parser, const char *value, yp_lex_state_t state, bool m
     if (parser->lex_state & YP_LEX_STATE_FNAME) {
       lex_state_set(parser, YP_LEX_STATE_ENDFN);
     } else {
-      lex_state_set(parser, state);
-      if (state == YP_LEX_STATE_BEG) {
-        parser->command_start = true;
-      }
-
       if (!(parser->lex_state & (YP_LEX_STATE_BEG | YP_LEX_STATE_LABELED | YP_LEX_STATE_CLASS)) && modifier_allowed) {
         lex_state_set(parser, YP_LEX_STATE_BEG | YP_LEX_STATE_LABEL);
+      } else {
+        lex_state_set(parser, state);
+      }
+      if (state == YP_LEX_STATE_BEG) {
+        parser->command_start = true;
       }
     }
 

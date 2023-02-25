@@ -5262,6 +5262,156 @@ class ParseTest < Test::Unit::TestCase
 
     assert_parses expected, "foo :a, b: true do |a, b| puts a end"
   end
+  
+  test "basic case when syntax" do
+    expected = CaseNode(
+      KEYWORD_CASE("case"),
+      SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil),
+      [CaseConditionNode(
+         KEYWORD_WHEN("when"),
+         [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil)],
+         nil
+       )],
+      nil,
+      KEYWORD_END("end")
+    )
+
+    assert_parses expected, "case :hi\nwhen :hi\nend"
+  end
+
+  test "case with else" do
+    expected = CaseNode(
+      KEYWORD_CASE("case"),
+      SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil),
+      [CaseConditionNode(
+         KEYWORD_WHEN("when"),
+         [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil)],
+         nil
+       )],
+      ElseNode(KEYWORD_ELSE("else"), Statements([]), NEWLINE("\n")),
+      KEYWORD_END("end")
+    )
+
+    assert_parses expected, "case :hi\nwhen :hi\nelse\nend"
+  end
+
+  test "case when statements" do
+    expected = CaseNode(
+      KEYWORD_CASE("case"),
+      TrueNode(),
+      [CaseConditionNode(
+         KEYWORD_WHEN("when"),
+         [TrueNode()],
+         Statements(
+           [CallNode(
+              nil,
+              nil,
+              IDENTIFIER("puts"),
+              nil,
+              ArgumentsNode(
+                [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil)]
+              ),
+              nil,
+              nil,
+              "puts"
+            )]
+         )
+       ),
+       CaseConditionNode(
+         KEYWORD_WHEN("when"),
+         [FalseNode()],
+         Statements(
+           [CallNode(
+              nil,
+              nil,
+              IDENTIFIER("puts"),
+              nil,
+              ArgumentsNode(
+                [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("bye"), nil)]
+              ),
+              nil,
+              nil,
+              "puts"
+            )]
+         )
+       )],
+      nil,
+      KEYWORD_END("end")
+    )
+
+    assert_parses expected, "case true; when true; puts :hi; when false; puts :bye; end"
+  end
+
+  test "case with pattern matching" do
+    expected = CaseNode(
+      KEYWORD_CASE("case"),
+      ArrayNode(
+        [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil)],
+        BRACKET_LEFT("["),
+        BRACKET_RIGHT("]")
+      ),
+      [CaseConditionNode(
+         KEYWORD_IN("in"),
+         [ArrayNode(
+            [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil)],
+            BRACKET_LEFT("["),
+            BRACKET_RIGHT("]")
+          )],
+         nil
+       ),
+       CaseConditionNode(
+         KEYWORD_IN("in"),
+         [ArrayNode(
+            [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("bye"), nil)],
+            BRACKET_LEFT("["),
+            BRACKET_RIGHT("]")
+          )],
+         nil
+       )],
+      nil,
+      KEYWORD_END("end")
+    )
+
+    assert_parses expected, "case [:hi]; in [:hi]; in [:bye]; end"
+  end
+
+  test "case with multiple conditions" do
+    expected = CaseNode(
+      KEYWORD_CASE("case"),
+      CallNode(nil, nil, IDENTIFIER("this"), nil, nil, nil, nil, "this"),
+      [CaseConditionNode(
+         KEYWORD_WHEN("when"),
+         [ConstantRead(CONSTANT("FooBar")), ConstantRead(CONSTANT("BazBonk"))],
+         nil
+       )],
+      nil,
+      KEYWORD_END("end")
+    )
+
+    assert_parses expected, "case this; when FooBar, BazBonk; end"
+  end
+
+  test "case with multiple pattern matching conditions" do
+    expected = CaseNode(
+      KEYWORD_CASE("case"),
+      CallNode(nil, nil, IDENTIFIER("this"), nil, nil, nil, nil, "this"),
+      [CaseConditionNode(
+         KEYWORD_IN("in"),
+         [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("hi"), nil),
+          ArrayNode(
+            [SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("bye"), nil),
+             SymbolNode(SYMBOL_BEGIN(":"), IDENTIFIER("bye"), nil)],
+            BRACKET_LEFT("["),
+            BRACKET_RIGHT("]")
+          )],
+         nil
+       )],
+      nil,
+      KEYWORD_END("end")
+    )
+
+    assert_parses expected, "case this; in :hi, [:bye, :bye]; end"
+  end
 
   private
 

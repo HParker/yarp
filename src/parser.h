@@ -170,6 +170,8 @@ typedef enum {
   YP_CONTEXT_POSTEXE,        // an END block
   YP_CONTEXT_MODULE,         // a module declaration
   YP_CONTEXT_CLASS,          // a class declaration
+  YP_CONTEXT_CASE_WHEN,      // a case when consequent
+  YP_CONTEXT_CASE_IN,        // a case in consequent
   YP_CONTEXT_DEF,            // a method definition
   YP_CONTEXT_IF,             // an if statement
   YP_CONTEXT_ELSIF,          // an elsif clause

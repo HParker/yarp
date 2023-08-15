@@ -5757,6 +5757,7 @@ parser_lex(yp_parser_t *parser) {
 
             // First, we're going to skip past any whitespace at the front of the next
             // token.
+            bool chomped_heredoc_escaped_newline = false;
             bool chomping = true;
             while (parser->current.end < parser->end && chomping) {
                 switch (*parser->current.end) {
@@ -5862,8 +5863,18 @@ parser_lex(yp_parser_t *parser) {
 
                     if (parser->heredoc_end) {
                         parser_flush_heredoc_end(parser);
-                    }
+                        if (chomped_heredoc_escaped_newline) {
+                            if ((parser->next_start + 1 < parser->end && *parser->next_start == '\n')) {
+                                yp_newline_list_append(&parser->newline_list, parser->next_start);
+                                parser->next_start++;
+                            }
 
+                            if ((parser->next_start + 2 < parser->end && *parser->next_start == '\r')) {
+                                yp_newline_list_append(&parser->newline_list, parser->next_start);
+                                parser->next_start += 2;
+                            }
+                        }
+                    }
                     // If this is an ignored newline, then we can continue lexing after
                     // calling the callback with the ignored newline token.
                     switch (lex_state_ignored_p(parser)) {

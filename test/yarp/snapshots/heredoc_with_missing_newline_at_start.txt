@@ -1,0 +1,45 @@
+ProgramNode(0...60)(
+  [],
+  StatementsNode(0...60)(
+    [CallNode(0...25)(
+       InterpolatedStringNode(0...9)((0...9), [], (27...34)),
+       (9...10),
+       (10...14),
+       nil,
+       ArgumentsNode(15...25)(
+         [RegularExpressionNode(15...21)(
+            (15...16),
+            (16...20),
+            (20...21),
+            "^ {",
+            0
+          ),
+          StringNode(23...25)((23...24), (24...24), (24...25), "")]
+       ),
+       nil,
+       nil,
+       0,
+       "gsub"
+     ),
+     CallNode(35...60)(
+       InterpolatedStringNode(35...44)((35...44), [], (62...69)),
+       (44...45),
+       (45...49),
+       nil,
+       ArgumentsNode(50...60)(
+         [RegularExpressionNode(50...56)(
+            (50...51),
+            (51...55),
+            (55...56),
+            "^ {",
+            0
+          ),
+          StringNode(58...60)((58...59), (59...59), (59...60), "")]
+       ),
+       nil,
+       nil,
+       0,
+       "gsub"
+     )]
+  )
+)

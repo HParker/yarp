@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+$:.unshift(File.expand_path("../lib", __dir__))
+require "ripper"
+require "yarp"
+
+input_queue = Queue.new
+output_queue = Queue.new
+
+feeder = Thread.new do
+  file = File.open("../all_gems/valid_ruby_files.txt")
+  # file = File.open("previous_invalid_files.txt")
+  # file.pos = 181966425
+  file.readlines.each do |ruby_file|
+    input_queue << "../all_gems/#{ruby_file.strip}"
+  end
+  input_queue.close
+end
+
+workers = 120.times.map do
+  Thread.new do
+    until input_queue.closed? && input_queue.empty?
+      if input_queue.empty?
+        sleep 1
+      else
+        begin
+          ruby_file = input_queue.shift
+          # puts "processing file #{ruby_file}"
+          # next if ruby_file.match?("universa-3.14.5/lib/universa/client.rb")
+          # next if ruby_file.match?("cache/mame-xmlparser-0.6.81.1/samples/treetest.rb")
+          # next if ruby_file.match?("cache/unified_page_object-0.0.1/lib/unified_page_object/config.rb")
+          
+          source = File.read(ruby_file)
+          ripper = YARP.lex_ripper(source)
+          yarp = YARP.lex_compat(source, ruby_file)
+          if yarp.errors.any?
+            output_queue << ruby_file
+          else
+            if yarp.value != ripper
+              output_queue << ruby_file
+            end
+          end
+        rescue
+          puts "FAILED ON FILE #{ruby_file}"
+        rescue SystemStackError
+          puts "FAILED ON FILE #{ruby_file}"
+          # raise
+        end
+      end
+    end
+    output_queue.close
+  end
+end
+
+
+reducer = Thread.new do
+  file = File.open("invalid_files.txt", "w")
+  until output_queue.closed? && output_queue.empty?
+    if output_queue.empty?
+      sleep 5
+      puts "status - input: #{input_queue.size}"
+      file.flush
+    else
+      print '.'
+      wrong_lex_file = output_queue.shift
+      file.write("#{wrong_lex_file}\n")
+    end
+  end
+end
+
+workers.each(&:join)
+reducer.join
+feeder.join
+puts "FILE LIST DONE"

@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+require 'fileutils'
+require 'securerandom'
+
+file = File.open("../invalid_files.txt")
+
+file.readlines.each do |line|
+  fp = line.strip
+  name = File.basename(fp)
+  FileUtils.cp(line.strip, "test/fixtures/#{SecureRandom.hex}-#{name}")
+end

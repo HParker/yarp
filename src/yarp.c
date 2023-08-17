@@ -5633,6 +5633,7 @@ parser_lex(yp_parser_t *parser) {
 
             // First, we're going to skip past any whitespace at the front of the next
             // token.
+            bool chomped_heredoc_escaped_newline = false;
             bool chomping = true;
             while (parser->current.end < parser->end && chomping) {
                 switch (*parser->current.end) {
@@ -5653,13 +5654,25 @@ parser_lex(yp_parser_t *parser) {
                         break;
                     case '\\':
                         if (peek_at(parser, 1) == '\n') {
-                            yp_newline_list_append(&parser->newline_list, parser->current.end + 1);
-                            parser->current.end += 2;
-                            space_seen = true;
+                            if (parser->heredoc_end) {
+                                parser->current.end = parser->heredoc_end;
+                                chomped_heredoc_escaped_newline = true;
+                                space_seen = false;
+                            } else {
+                                yp_newline_list_append(&parser->newline_list, parser->current.end + 1);
+                                parser->current.end += 2;
+                                space_seen = true;
+                            }
                         } else if (parser->current.end + 2 < parser->end && peek_at(parser, 1) == '\r' && peek_at(parser, 2) == '\n') {
-                            yp_newline_list_append(&parser->newline_list, parser->current.end + 2);
-                            parser->current.end += 3;
-                            space_seen = true;
+                            if (parser->heredoc_end) {
+                                parser->current.end = parser->heredoc_end;
+                                chomped_heredoc_escaped_newline = true;
+                                space_seen = false;
+                            } else {
+                                yp_newline_list_append(&parser->newline_list, parser->current.end + 2);
+                                parser->current.end += 3;
+                                space_seen = true;
+                            }
                         } else if (yp_char_is_inline_whitespace(*parser->current.end)) {
                             parser->current.end += 2;
                         } else {
@@ -5727,6 +5740,15 @@ parser_lex(yp_parser_t *parser) {
                         yp_newline_list_append(&parser->newline_list, parser->current.end - 1);
                     } else {
                         parser_flush_heredoc_end(parser);
+                        if (chomped_heredoc_escaped_newline) {
+                            if ((parser->next_start + 1 < parser->end && *parser->next_start == '\n')) {
+                                yp_newline_list_append(&parser->newline_list, parser->next_start);
+                                parser->next_start++;
+                            } else if ((parser->next_start + 2 < parser->end && *parser->next_start == '\r')) {
+                                yp_newline_list_append(&parser->newline_list, parser->next_start + 1);
+                                parser->next_start += 1;
+                            }
+                        }
                     }
 
                     // If this is an ignored newline, then we can continue lexing after

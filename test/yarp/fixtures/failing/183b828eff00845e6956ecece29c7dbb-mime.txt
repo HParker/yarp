@@ -1,0 +1,16 @@
+#  Wie verwende ich das ganze?
+
+    require 'mime/types'
+
+    plaintext = MIME::Types['text/plain']
+    print plaintext.media_type      # => 'text'
+    print plaintext.sub_type        # => 'plain'
+    puts plaintext.extensions.join(' ') # => 'asc txt c cc h hh cpp'
+    puts plaintext.encoding         # => 8bit
+    puts plaintext.binary?          # => false
+    puts plaintext.ascii?           # => true
+    puts plaintext.obsolete?        # => false
+    puts plaintext.registered?      # => true
+    puts plaintext == 'text/plain'      # => true
+    puts MIME::Type.simplified('x-appl/x-zip') # => 'appl/zip'")
+    

@@ -1,0 +1,138 @@
+require_relative "base"
+
+module Spyro
+  module ActionViewExtension
+
+    module CollectionForHelper
+      module Parser
+        class ActiveRecordRelation < Parser::Base
+          @@types[::ActiveRecord::Relation] = self
+
+          def initialize collection, helper, options
+            super
+          end
+
+          def header args, opts = {}, &block
+            self.data args, opts, &block
+          end
+
+          def data args, opts = {}, &block
+            if args.is_a? ::Array
+              @unicollection.add_meta :data, args
+            else
+              @unicollection.add_meta :data, args.values.reduce(:+).uniq
+              args.each do |key, value|
+                @unicollection.add_meta "data-#{key}".to_sym, value
+              end
+            end
+
+            self.actions if opts[:actions]
+            @unicollection.add_meta :html_header, opts[:html]
+            @unicollection.add_meta :block_header, block if block_given?
+          end
+
+          def parse
+            unless @unicollection.has_meta? :data
+              @unicollection.add_meta :data, @collection.first.try(:attribute_names).try(:compact) || []
+              @unicollection.add_meta :actions, true
+            end
+
+            if @unicollection.rows.empty?
+              @collection.each do |model|
+                @unicollection.meta[:model_class] ||= model.class.to_s
+
+                @unicollection.row do |r|
+                  @unicollection.meta[:data].each do |name|
+                    hash = hash_for_name model, name
+                    hash[:link] = link model if name == :name
+                    r.add_elem UniData::Element.new(hash)
+                  end
+                  r.add_elem_meta :actions, populate_actions(model, r, @options, [:show, :edit, :destroy])
+                  r.add_elem_meta :id, model.id
+                end
+              end
+            end
+
+            @unicollection.add_meta :header, @unicollection.meta[:data]
+            @unicollection.try_add_meta :footer, ["Total: #{@unicollection.rows.count}"]
+          end
+
+          def footer content, opts = {}
+            @unicollection.add_meta :footer, [*content]
+            @unicollection.add_meta :html_footer, opts[:html]
+          end
+
+          def populate_actions model, row, options, buttons
+            actions = {}
+
+            buttons.each do |button|
+              actions[:show] = polymorphic_path([*options[:parents], model]) rescue nil if button == :show
+              actions[:edit] = (actions[:show] ? "#{actions[:show]}/edit" : edit_polymorphic_path([*options[:parents], model])) rescue nil if button == :edit
+              actions[:destroy] = actions[:show] || polymorphic_path([*options[:parents], model]) rescue nil if button == :destroy
+              actions[button.keys.first] = button.values.first if button.is_a? Hash
+            end
+
+            actions.delete_if { |_, v| v.nil? }
+          end
+
+          def actions val = true
+            @unicollection.add_meta :actions, val
+          end
+
+          def body opts = {}, &block
+            def row opts
+              @r.add_elem_meta :opts, opts
+            end
+
+            @collection.each do |elem|
+              @unicollection.meta[:model_class] ||= elem.class.to_s
+              @unicollection.row do |r|
+                @elem = elem
+                @r = r
+                r.add_elem_meta :id, elem.id if elem.respond_to?(:id)
+                block.call elem
+              end
+            end
+
+            @unicollection.add_meta :html_body, opts[:html]
+          end
+
+          def cell value = nil, options = {}, &block
+            if value.is_a? Hash
+              options = value
+              value = nil
+            end
+
+            value = @h.capture(&block) || "" if block_given?
+
+            options[:link] = true if @unicollection.meta[:data] and @unicollection.meta[:data][@unicollection.rows.last[:data].count] == :name
+            options[:link] = link @elem if options[:link] == true
+
+            hash = if value
+                     {value: value, type: String, name: "custom", db_type: String}
+                   else
+                     hash_for_name @elem, @unicollection.meta[:data][@unicollection.rows.last[:data].count]
+                   end
+
+            @r.add_elem UniData::Element.new(hash.merge(options))
+          end
+
+          def buttons buttons = nil, opts = {}, &block
+            if block_given?
+              @r.add_elem_meta :actions, @h.capture(&block)
+            else
+              buttons = :all if buttons.nil?
+              buttons = [*buttons]
+              buttons.map! {|b| b == :all ? [:show, :edit, :destroy] : b}
+              buttons.flatten!
+              @r.add_elem_meta :actions, populate_actions(@elem, @r, @options, [*buttons])
+            end
+          end
+
+          alias_method :button, :buttons
+
+        end
+      end
+    end
+  end
+end

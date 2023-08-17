@@ -1,0 +1,55 @@
+require "method_watcher/version"
+
+module MethodWatcher
+  class << self
+    def init_method_watcher mod
+      super_watch_methods = (mod.respond_to?(:superclass) && mod.superclass && mod.superclass.instance_variable_get("@_watch_methods")) || {}
+      mod.instance_variable_set "@_watch_methods", super_watch_methods.merge({})
+      mod.instance_variable_set "@_watch_method", false
+    end
+
+    def included mod
+      MethodWatcher.init_method_watcher mod
+      mod.singleton_class.class_eval do
+        def watch_methods *methods
+          if methods.empty?
+            @_watch_method = true 
+          else
+            methods.each do |method|
+              @_watch_methods[method.to_sym] = self
+            end
+          end
+        end
+
+        def unwatch_methods *methods
+          if methods.empty?
+            @_watch_method = false 
+          else
+            methods.each do |method|
+              @_watch_methods.delete method.to_sym
+            end
+          end
+        end
+
+        def method_added method
+          super
+          if @_watch_methods.has_key?(method.to_sym)
+            @_watch_methods[method].method_overriding method
+          end
+
+          watch_methods method if @_watch_method
+        end
+
+        def method_overriding method
+          warn "method #{self}##{method} is overridden"
+        end
+
+
+        def inherited mod
+          super
+          MethodWatcher.init_method_watcher mod
+        end
+      end
+    end
+  end
+end

@@ -1,0 +1,37 @@
+########################################################################################################################
+# Render a type into ruby
+########################################################################################################################
+
+require_relative '../../model/type'
+
+module Dbsketch
+	module Rendering
+		module Meta
+
+			class TypeRenderer
+				def initialize type_keyword: 'Dbsketch::Model::Type.new'
+					### Preconditions
+					raise ArgumentError, "type_keyword is not a String" unless type_keyword.is_a? String
+					###
+					@type_keyword = type_keyword
+				end
+
+				def create type
+					### Preconditions
+					raise ArgumentError, "type is not a Dbsketch::Model::Type" unless type.is_a? Dbsketch::Model::Type
+					###
+					str = "#{@type_keyword}('#{type.sql_type}'"
+					if type.sizes.count > 1
+						str << ", [#{type.sizes.join(", ")}]"
+					elsif type.sizes.count > 0
+						str << ", #{type.sizes.first.is_a?(String) ? "'#{type.sizes.first}'" : type.sizes.first}"
+					end
+					str << ")"
+					str
+				end
+
+			end
+
+		end
+	end
+end

@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+# -*- encoding: utf-8 -*-
+# Copyright Freya Dorn <freya.siv.dorn@gmail.com>, 2017
+# License: GNU GPLv3 (or later) <http://www.gnu.org/copyleft/gpl.html>
+
+class Table
+  def initialize separator: "\t", alignment: :left
+    @rows     	= []
+    @lengths  	= []
+    @separator	= separator
+    @just     	= case alignment
+                  when :left   ; :ljust
+                  when :right  ; :rjust
+                  when :center ; :center
+                  else
+                    raise "invalid alignment: #{alignment}"
+                  end
+  end
+
+  def [](row)    	; @rows[row]    	; end
+  def []=(row, x)	; @rows[row] = x	; end
+
+  def <<(row)
+    row.each.with_index do |x, i|
+      l = @lengths[i] || 0
+      s = x.str_length
+      @lengths[i] = s if s > l
+    end
+
+    @rows << row
+  end
+
+  def render out
+    @rows.each.with_index do |row, row_i|
+      row.each.with_index do |elem, elem_i|
+        len = @lengths[elem_i]
+        next if len.nil?
+
+        # align element based on how much it's internally longer than it appears
+        aligned = if not elem.nil?
+                    elem_diff = elem.to_s.length - elem.str_length
+                    elem.send(@just, len + elem_diff)
+                  else
+                    " "*len
+                  end
+
+        if elem_i == (row.size - 1)
+          out.write(aligned.rstrip)
+        else
+          out.write(aligned)
+          out.write(@separator)
+        end
+      end
+      out.write("\n") unless row_i == (@rows.size - 1)
+    end
+  end
+
+  def to_s
+    render(StringIO.new).string
+  end
+end

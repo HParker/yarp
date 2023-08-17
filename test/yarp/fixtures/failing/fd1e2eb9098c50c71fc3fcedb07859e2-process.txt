@@ -1,0 +1,517 @@
+#!/usr/bin/ruby
+
+###################################################################
+#                                                                 #
+#                                                                 #
+# GOODDATA MARKETO CONNECTOR                                      #
+#                                                                 #
+# Ruby process for download client data from Marketo.             #
+# https://github.com/gooddata/app_store/marketo_connector         #
+#                                                                 #
+#                                                                 #
+###################################################################
+
+require 'gooddata_marketo'
+
+
+MARKETO_SOAP_USER   = ''
+MARKETO_SOAP_KEY    = ''
+MARKETO_REST_ID     = ''
+MARKETO_REST_SECRET = ''
+MARKETO_SUBDOMAIN   = ''
+GOODDATA_USER       = ''
+GOODDATA_PASSWORD   = ''
+GOODDATA_PROJECT    = ''
+GOODDATA_ADS        = ''
+S3_PUBLIC_KEY       = ''
+S3_PRIVATE_KEY      = ''
+S3_BUCKET           = 'marketo_connector'
+MARKETO_API_LIMIT   = 10000
+LEAD_LIST_DUMP_CSV  = 'marketo_leads_dump.csv'
+
+@s3 = S3Helper.new :public_key => S3_PUBLIC_KEY,
+                   :private_key => S3_PRIVATE_KEY,
+                   :bucket => S3_BUCKET
+
+@webdav = WebDAV.new(:user => GOODDATA_USER,
+                     :pass => GOODDATA_PASSWORD,
+                     :project => GOODDATA_PROJECT)
+
+@dwh = GoodData::Datawarehouse.new(GOODDATA_USER,
+                                   GOODDATA_PASSWORD,
+                                   GOODDATA_ADS)
+
+@marketo = GoodDataMarketo.connect(:user_id => MARKETO_SOAP_USER,
+                                    :encryption_key => MARKETO_SOAP_KEY,
+                                    :api_subdomain => MARKETO_SUBDOMAIN,
+                                    :webdav => @webdav)
+
+GoodDataMarketo.logging = true
+
+binding.pry
+
+# Test services
+# @marketo.test_rest
+# @marketo.test_soap
+# @s3.test
+# @dwh.test
+# @webdav.test
+
+
+def run_load config = {}
+
+  index = config[:index] || 1
+  @increment = config[:increment] || (12*60*60)
+  @marketo = config[:marketo_client]
+  @ads_target_table_name = config[:ads_table]
+  @lead_dump_file = "get_load_chunk_#{index}"
+
+  if @s3.exists? 'queue.json'
+
+    @queue = JSON.parse(@s3.download('queue.json'))
+    # Cancel the load if the queue is empty and delete the object.
+    if @queue.empty?
+      puts 'WARNING: Empty queue array was extracted from S3. Using queue passed in method.' if GoodDataMarketo.logging
+      @s3.delete('queue.json')
+      @queue = config[:queue]
+
+    end
+
+  else
+    @queue = config[:queue]
+  end
+
+  raise "You must pass an array of job hashs :queue_array when using run_load AND define a :marketo_client." unless @queue.length > 0 && @marketo
+  raise ":ads_table param is required with using run_load." unless @ads_target_table_name
+
+
+
+  def determine_loads_state config = {}
+
+    loads = @marketo.loads(:user => GOODDATA_USER,
+                           :pass => GOODDATA_PASSWORD,
+                           :project => GOODDATA_PROJECT,
+                           :marketo_client => @marketo)
+
+    if loads.available?
+
+      file = loads.available.first
+
+      load = loads.create :name => file
+
+      @job_name = file
+      @id = load.id
+      @ads_table = load.json[:ads_table]
+      # Run the load from local or remote.
+      load.execute
+      # Data from the job can now be accessed ARRAY load.storage
+      # load.storage
+
+      if !load.storage.empty?
+
+        # Join all of the columns from the sample to all other columns.
+        @columns_load_aggregate = ['sys_capture_date']
+        load.storage.each { |lead| @columns_load_aggregate = @columns_load_aggregate | lead.columns }
+        @columns_load_aggregate.map! { |column|
+          column.downcase.gsub('-','_')
+        }
+
+        # DEFAULTS: Use the correct ADS table.
+        if load.json[:method] == "get_multiple"
+          ads_target_table_name = 'marketo_leads'
+        elsif load.json[:method] = 'get_changes'
+          ads_target_table_name = 'marketo_changes'
+        else
+          ads_target_table_name = 'dump'
+        end
+
+        # Set up a new Table/Automatically loads current table if exists.
+        table = Table.new :client => @dwh, :name => @ads_table || ads_target_table_name, :columns => ['sys_capture_date']
+
+        if @columns_load_aggregate.length > 0
+          table.merge_columns :merge_with => @columns_load_aggregate
+          @csv = CSV.open("#{@id}.csv", 'wb')
+        else
+          @csv = CSV.open("#{@id}.csv", 'wb')
+        end
+
+        updated_columns = table.columns
+
+        if @columns_load_aggregate.length > 0
+          @csv << updated_columns.uniq
+        end
+
+        count = 0
+
+        ids_for_get_multiple_load = []
+
+        load.storage.each do |lead|
+
+          # Get any new lead or merge lead ids and queue them for a load with get multiple.
+          ids_for_get_multiple_load << lead.values['merge_id'] if lead.values['merge_id']
+          ids_for_get_multiple_load << lead.values['lead_id'] if lead.values['lead_id']
+
+          row_to_save_csv = []
+
+          row_with_columns = updated_columns.map { |column|
+            if lead.columns.include? column
+              { column => lead.values[column] }
+            elsif lead.columns.include? "#{column}_m" # Check for anything that was removed by SQL
+              { "#{column}_m" => lead.values["#{column}_m"] }
+            elsif column == 'sys_capture_date'
+              { 'sys_capture_date' => Time.now.to_s }
+            else
+              { column => nil }
+            end
+          }
+
+          row_with_columns.each { |item|
+            c = item.to_a.flatten
+            if c[1] == nil
+              row_to_save_csv << nil
+            else
+              row_to_save_csv << c[1]
+            end
+
+          }
+
+          count += 1
+          @csv << row_to_save_csv
+
+        end
+
+        # Prepare (flush) the CSV for upload.
+        @csv.flush
+
+        puts "#{Time.now} => ADS:LoadingCSV \"#{@id}.csv\"" if GoodDataMarketo.logging
+        table.import_csv("#{@id}.csv")
+
+        puts "#{Time.now} => CSV:Rows:#{count}"
+
+        puts "#{Time.now} => CSV:Merged&New:#{ids_for_get_multiple_load.length}"
+
+        save_ids_for_get_multiple ids_for_get_multiple_load, 'a'
+
+        File.delete("#{load.json[:name]}_load.json") if File.exists? ("#{load.json[:name]}_load.json")
+        #File.delete("#{@id}.csv") if File.exists? ("#{@id}.csv")
+
+        puts "#{Time.now} => ADS:TableComplete:#{@lead_dump_file}" if GoodDataMarketo.logging
+        puts "#{Time.now} => LastARGS:#{load.arguments}" if GoodDataMarketo.logging
+
+      end
+
+      case load.json[:method]
+
+        when 'get_changes'
+
+          # Increment the load by one day if it is time related.
+
+          oca = load.arguments[:oldest_created_at]
+          lca = load.arguments[:latest_created_at]
+
+          increment = Time.parse(lca) - Time.parse(oca)
+          total_time_range = Time.now - Time.parse(oca)
+
+          load.arguments[:oldest_created_at] = Time.parse(lca).to_s
+          load.arguments[:latest_created_at] = (Time.parse(lca) + increment).to_s
+
+          puts "#{Time.now} => (est.) API_CALLS until CURRENT TIME: #{(total_time_range/increment).round}" if GoodDataMarketo.logging
+
+          # If the latest time is later then today kill the load.
+
+          if Time.parse(load.arguments[:latest_created_at]) > Time.now
+
+            load.terminate
+
+            determine_loads_state
+
+            # Otherwise save the load and resume additional loads.
+          else
+
+            load.save
+
+            determine_loads_state
+
+          end
+
+        when 'get_multiple'
+
+          determine_loads_state
+
+        else
+
+          raise 'Unable to determine lead type ("get_multiple"/"get_changes")!'
+
+      end
+
+    else
+
+      load = @queue.pop
+
+      if @queue.length > 0
+        File.open('queue.json','w'){ |f| JSON.dump(@queue, f) }
+        @s3.upload('queue.json')
+      end
+
+      if load
+
+        loads.create load
+
+        determine_loads_state
+
+      else
+
+        @s3.delete('queue.json')
+        File.delete('queue.json') if File.exists?('queue.json')
+
+      end
+
+
+    end
+
+  end
+
+# Run once, recursive until no loads are available.
+  determine_loads_state
+
+end
+
+#####################################
+#                                   #
+# GET ALL LEADS INITIAL BEGINS HERE #
+#                                   #
+#####################################
+# Downloads all current lead ids with REST ID.
+# Uses SOAP API to rotate through ids with get multiple.
+# Runs once, boolean value set in initial_load_get_multiple at marketo_connector_config.json
+
+def initial_load_get_multiple
+
+  @marketo.write_all_lead_ids_to_csv # Large bulk download to CSV of leads over REST API.
+
+  ids = CSV.open(LEAD_LIST_DUMP_CSV).map { |m| m[0] }
+
+  puts "#{Time.now} => #{ids.length} imported from local CSV." if GoodDataMarketo.logging
+
+  counter = 0
+
+  loop do
+
+    counter += 1
+
+    batch = ids.slice!(1..1000)
+
+    break if batch.length <= 0
+
+    get_multiple_leads_configuration = {
+        :name => "get_all_leads_chunk",
+        :type => 'leads',
+        :method => 'get_multiple',
+        :ads_table => 'marketo_leads',
+        :arguments => {
+            :ids => batch, # Notice the addition of the IDS box
+            :type => 'IDNUM'
+        }
+    }
+
+    puts "#{Time.now} => Batch:Downloader:Length:#{batch.length} (Req:#{counter})" if GoodDataMarketo.logging
+
+    run_load :batch => batch,
+             :counter => counter,
+             :ads_table => 'marketo_leads',
+             :marketo_client => @marketo,
+             :queue => [get_multiple_leads_configuration]
+
+    save_ids_for_get_multiple ids, 'w'
+
+  end
+end
+
+def update_get_multiple_leads
+
+  file = File.open(LEAD_LIST_DUMP_CSV, 'w')
+  file.puts @s3.download(LEAD_LIST_DUMP_CSV)
+
+  ids = CSV.open(LEAD_LIST_DUMP_CSV).map { |m| m[0] }
+
+  puts "#{Time.now} => #{ids.length} imported from local CSV." if GoodDataMarketo.logging
+
+  counter = 0
+
+  loop do
+
+    counter += 1
+
+    batch = ids.slice!(1..1000)
+
+    break if batch.length <= 0
+
+    get_multiple_leads_configuration = {
+        :name => "get_all_leads_chunk",
+        :type => 'leads',
+        :method => 'get_multiple',
+        :ads_table => 'marketo_leads',
+        :arguments => {
+            :ids => batch, # Notice the addition of the IDS box
+            :type => 'IDNUM'
+        }
+    }
+
+    puts "#{Time.now} => Batch:Downloader:Length:#{batch.length} (Req:#{counter})" if GoodDataMarketo.logging
+
+    run_load :batch => batch,
+             :counter => counter,
+             :ads_table => 'marketo_leads',
+             :marketo_client => @marketo,
+             :queue => [get_multiple_leads_configuration]
+
+    save_ids_for_get_multiple ids, 'w'
+
+  end
+end
+
+########################################
+#                                      #
+# GET LEAD CHANGES INITIAL BEGINS HERE #
+#                                      #
+########################################
+# Starts January 1st 2000 and increments by the day until present day.
+# All Activity Types included unless specified.
+# Runs once, boolean value set in initial_load_get_changes at marketo_connector_config.json
+
+def initial_load_get_changes
+
+  get_lead_changes_configuration = {
+      :name => 'get_lead_changes_chunk',
+      :type => 'leads',
+      :method => 'get_changes',
+      :ads_table => 'marketo_changes',
+      :arguments => {
+          # "oldest_created_at" and "latest_created_at" is the size of the increment it will to current time.
+          # :oldest_created_at => 'January 1st 2000',
+          # :latest_created_at => 'January 2nd 2000',
+          :oldest_created_at => 'January 1st 2015',
+          :latest_created_at => 'January 4th 2015',
+          :filters => []
+      }
+  }
+
+  # Create a new configuration object for each activity type.
+  get_lead_changes_configuration.freeze
+
+  queue = []
+
+  @marketo.activity_types.each { |type|
+
+    g = {
+        :filters => [type]
+    }
+
+    m = get_lead_changes_configuration.dup
+    c = m.dup
+    c[:arguments] = m[:arguments].merge(g)
+
+    queue << c
+
+  }
+
+  run_load :ads_table => get_lead_changes_configuration[:ads_table],
+           :queue => queue,
+           :marketo_client => @marketo,
+           :index => 1,
+           :counter => 1
+
+  puts "#{Time.now} => Updating initial load changes to true in connector configuration." if GoodDataMarketo.logging
+
+  @s3.set_config(:initial_load_get_changes => true)
+
+end
+
+########################################
+#                                      #
+#         UPDATE LEAD CHANGES          #
+#                                      #
+########################################
+# Synchronizes last 12 hours from process execution.
+# Runs continuously.
+
+def update_lead_changes
+
+  # Changing activity types from the default set to just merged leads.
+  #@marketo.activity_types = ['Visit Webpage']
+  #@marketo.activity_types = ['New SFDC Opportunity','Remove from Opportunity','Add to Opportunity', 'Update Opportunity']
+
+  fourty_eight_hours_ago = (Time.now - (48*60*60)).to_s
+  twenty_four_hours_ago = (Time.now - (24*60*60)).to_s
+  twelve_hours_ago = (Time.now - (12*60*60)).to_s
+  six_hours_ago = (Time.now - (6*60*60)).to_s
+
+  get_lead_changes_configuration = {
+      :name => 'get_lead_changes_chunk',
+      :type => 'leads',
+      :method => 'get_changes',
+      :ads_table => 'marketo_changes',
+      :arguments => {
+          #  "latest_created_at subtracted by "oldest_created_at" the size of the increment it will to current time.
+          :oldest_created_at => twelve_hours_ago,
+          :latest_created_at => six_hours_ago,
+          :filters => []
+      }
+  }
+
+  # Create a new configuration object for each activity type.
+  get_lead_changes_configuration.freeze
+
+  queue = []
+
+  @marketo.activity_types.each { |type|
+
+    g = {
+        :filters => [type]
+    }
+
+    m = get_lead_changes_configuration.dup
+    c = m.dup
+    c[:arguments] = m[:arguments].merge(g)
+
+    queue << c
+
+  }
+
+  run_load :ads_table => get_lead_changes_configuration[:ads_table],
+           :queue => queue,
+           :marketo_client => @marketo,
+           :increment => (24*60*60),
+           #:increment => (12*60*60), # Every twelve hours.
+           :counter => 1
+
+end
+
+def save_ids_for_get_multiple ids, write_type
+  csv = CSV.open(LEAD_LIST_DUMP_CSV, write_type)
+  ids.each { |row| csv << [row] }
+  csv.flush
+  @s3.upload(LEAD_LIST_DUMP_CSV)
+end
+
+# Download the configuration file from S3. If there is not one, one will be created.
+config = @s3.get_config
+
+if !config[:initial_load_get_multiple]
+
+  initial_load_get_multiple
+
+# elsif !config[:initial_load_get_changes]
+#
+#   initial_load_get_changes
+
+else
+
+  update_lead_changes
+# Once the most recent changes downloaded, create and save a load for update_get_multiple_leads
+# update_get_multiple_leads
+
+end
+
+
+binding.pry

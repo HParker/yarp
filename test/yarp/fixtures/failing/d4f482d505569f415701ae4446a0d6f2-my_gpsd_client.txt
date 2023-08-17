@@ -1,0 +1,533 @@
+require "my_gpsd_client/version"
+require 'socket'
+require 'json'
+require 'date'
+require 'logger'
+
+class MyGpsdClient
+  attr_accessor :host, :port, :command, :min_speed, :watchdog_max, :watchdog_force, :watchdog_euthanized,
+                :log_progname, :log_level, :log_path, :log_format, :log_time_format
+  attr_reader   :version, :last_watch, :socket_ready, :socket, :msg_counts, :watchdog_fired_count,
+                :readthread, :socket_init_thread, :watchdogthread, :watchdog_count
+
+
+  DEFAULT_HOST = 'localhost'
+  DEFAULT_PORT = 2947
+  DEFAULT_WATCH = {"class":"WATCH", "enable":false,"json":false,"nmea":false}
+  DEFAULT_WATCHDOG_MAX = 2.0
+
+  DEFAULT_LOG_PROGNAME = "MyGpsdClient"
+  DEFAULT_LOG_LEVEL = Logger::DEBUG
+  DEFAULT_LOG_PATH = 'log/MyGpsdClient.log'
+  DEFAULT_LOG_FORMAT = ''
+  DEFAULT_LOG_TIME_FORMAT = '%Y-%m-%d %T.%N %z %Z'
+
+  WATCHDOG_STEP = 0.1 # Check watchdog ten times per second
+
+  THREAD_NAMES = {    # Keep displayed names the same length
+    MainThread:       "MainThread ",
+    SocketInitThread: "SockInitThd",
+    WatchdogThread:   "WatchdogThd",
+    ReadThread:       "ReadThread "
+   }
+  Thread.current[:name]=THREAD_NAMES[:MainThread]
+
+  @@logger = nil
+
+
+  # A simple gpsd client that dump's json objects contianing all info received from the gpsd deamon
+  # you need to at least setup either the raw callback (on_raw_change) or position callback (on_position_change) to use GPSD2JSON. the raw callback just passes the json objects it received from the daemon on to the block you pass it. the on_position_change and on_satellites_change are a bit easier to use.
+  # @example Easy setup
+  # gps = GPSD2JSON.new()
+  # gps.on_satellites_change { |sats| STDERR.puts "found #{sats.length} satellites, of which #{sats.count{|sat| sat['used']} } active" }
+  # gps.on_position_change { |pos| STDERR.puts "lat: #{pos['lat']}, lng: #{pos['lon']}, alt: #{pos['alt']}, speed: #{pos['speed']} at #{pos['time']}, which is #{(Time.now - pos['time'].to_time) * 1000}ms old" }
+  # gps.start
+  # #when done
+  # gps.stop
+  # @example Quickest raw mode, just dumping all json packets as the are
+  # gps = GPSD2JSON.new()
+  # gps.on_raw_change { |raw| STDERR.puts raw.inspect }
+  # gps.start
+  # #when done
+  # gps.stop
+  def initialize(host: DEFAULT_HOST, port: DEFAULT_PORT, watch: DEFAULT_WATCH, log_level: DEFAULT_LOG_LEVEL)
+    @version = MyGpsdClient_version::VERSION
+    @host = host
+    @port = port
+    @last_watch = watch
+
+    @log_level = log_level
+    @log_path = DEFAULT_LOG_PATH
+    @log_format = DEFAULT_LOG_FORMAT
+    @log_time_format = DEFAULT_LOG_TIME_FORMAT
+    @log_progname = DEFAULT_LOG_PROGNAME
+
+    @socket = nil
+    @socket_ready = false
+    @readthread = nil
+    @socket_init_thread = nil
+    @watchdog_thread = nil
+    @watchdog_count = 0.0
+    @watchdog_max = DEFAULT_WATCHDOG_MAX
+    @watchdog_fired_count = 0
+    @watchdog_force = false
+    @watchdog_euthanized = false
+    @min_speed = 0 # speed needs to be higher than this to make the gps info count
+    @last = nil #last gps info
+    @sats = nil # last satellites info
+    @sent_raw_callback = nil
+    @json_raw_callback = nil
+    @json_pos_callback = nil
+    @json_sat_callback = nil
+    @json_pps_callback = nil
+    @json_unk_callback = nil
+    @msg_counts = {wtch: 0, ver: 0, tpv: 0, sky: 0, gst: 0, att: 0,
+                  toff: 0, pol: 0, pps: 0, dev: 0, devs: 0, err: 0,
+                  unk: 0}
+
+    @logger = new_logger path: @log_path, progname: @log_progname, time_format: @log_time_format, level: @log_level
+    my_logger level: 'info', msg: "MyGpsdClient Gem - Version: #{@version}"
+  end
+
+  #
+  # attribute_writters additional actions
+  #
+  def command=(val)
+    @command = val
+    my_logger level: 'info', msg:  "Command: Command received: #{@command}"
+    @last_watch = @command if @command[:class].casecmp? "WATCH"
+    send_cmmd
+  end
+
+  def log_level=(val)
+    @log_level = val
+    @logger.level = @log_level
+  end
+
+  def log_progname=(val)
+    @log_progname = val
+    @logger.progname = @log_progname
+  end
+
+  def log_format=(val)
+    @log_format = val
+    @logger.format = @log_format
+  end
+
+  def log_time_format=(val)
+    @log_time_format = val
+    @logger.datetime_format = @log_time_format
+  end
+
+  def log_path=(val)
+    @log_path = val
+    @logger = new_logger path: @log_path, progname: @log_progname, time_format: @log_time_format, level: @log_level
+  end
+  #
+  # End attribute_writters additional actions
+  #
+
+
+
+  def log_marker level: 'debug', msg: "Log Marker"
+    my_logger level: level, msg: "~~~~~~~~~~~~~~~~~~~~~~~ #{msg} ~~~~~~~~~~~~~~~~~~~~~~~"
+  end
+
+  def on_raw_send(options:{}, &block)
+    @sent_raw_callback = block
+  end
+
+  # @param [Object] options Possible options to pass (not used yet)
+  # @param [Block] block Block to call when new json object comes from gpsd
+  def on_raw_change(options:{}, &block)
+      @json_raw_callback = block
+  end
+
+
+  private
+
+  def send_cmmd
+    my_logger  msg:  "Entered Send_cmmd"
+    unless @socket_ready
+      my_logger  msg:  "Send_cmmd: Entering 'start'"
+      start
+      my_logger  msg:  "Send_cmmd: Wait for 'socket_init_thread' to completed"
+      @socket_init_thread.join  # wait for socket_ready
+      my_logger  msg:  "Send_cmmd: 'start' completed"
+    end
+    unless @socket_ready
+      my_logger  level: 'error', msg:  'Send_cmmd: Socket Initialization Error'
+    else
+      # it's ready, tell it to start watching and passing
+      my_logger  msg:  "Send_cmmd: socket ready, send cmmd"
+      if @command.size > 1
+        str = "?#{@command[:class].upcase}=#{@command.to_json}"
+      else
+        str = "?#{@command[:class].upcase};"
+      end
+      my_logger level: 'info', msg:  "Send_cmmd: sending: #{str}"
+      @sent_raw_callback.call( str) if @sent_raw_callback
+      @socket.puts str
+      # If Enable was false in the last WATCH command, close the connecction
+      my_logger msg: "@last_watch.key?(:enable) #{@last_watch.key?(:enable)}, @last_watch[:enable] #{@last_watch[:enable]}"
+      stop if @last_watch.key?(:enable) && !@last_watch[:enable]
+    end
+    my_logger  msg:  "Send_cmmd: Exiting send_cmmd"
+  end
+
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~ PROCESS STARTUP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+  # Open the socket and when ready request the position flow from the gps daemon
+  def start
+    my_logger  msg:  "Entered Start"
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # background thread that is used to open the socket and wait for it to be ready
+    my_logger  level: 'info', msg:  "Start: Starting Socket_init Thread"
+    @socket_init_thread = Thread.start do
+      Thread.current[:name]=THREAD_NAMES[:SocketInitThread]
+      my_logger  msg:  "Socket_init Thread"
+      #open the socket
+      retry_count = 0
+      #while not @socket_ready
+      while (retry_count += 1) <= 10 && !@socket_ready
+        my_logger  msg:  "Socket_init Thread: Socket Init Loop - Pass: #{retry_count}"
+        init_socket
+        my_logger  msg:  "Socket_init Thread: Return from init_socket - @socket_ready: #{@socket_ready}"
+        #wait for it to be ready
+        sleep 0.1
+      end
+      my_logger  level: 'info', msg:  "Socket_init Thread: Exiting"
+    end
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # background thead that is used to read info from the socket and use it
+    my_logger  msg:  "Start: Starting readthread Thread"
+    @readthread = Thread.start do
+      Thread.current[:name]=THREAD_NAMES[:ReadThread]
+      my_logger  msg:  "Readthread Thread: #{Thread.current[:name]}"
+      my_logger  msg:  "Readthread: Wait for 'socket_init_thread' to completed"
+      # wait for socket_init_thread to complete so that @socket_ready will be true
+      @socket_init_thread.join if @socket_init_thread && @socket_init_thread.alive?
+      while @socket_ready do
+        begin
+          read_from_socket
+        rescue
+          my_logger  msg:  "Readthread Thread: Error while reading socket: #{$!}"
+        end
+      end
+      my_logger level: 'warn', msg:  "Readthread Thread: Exiting, @socket_ready: #{@socket_ready}"
+    end
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # background thread to implement a watchdog timer
+    if @watchdog_euthanized
+      my_logger msg: "Watchdog has been euthanized!"
+    else
+      my_logger  msg:  "Start: Starting Watchdog Thread"
+      @watchdogthread = Thread.start do
+        Thread.current[:name]=THREAD_NAMES[:WatchdogThread]
+        my_logger  msg:  "Watchdog Thread: #{Thread.current[:name]}"
+        @watchdog_count = 0.0
+        @watchdog_enabled = true
+        while @watchdog_enabled && !@watchdog_euthanized do
+          my_logger msg: "Watchdog Thread: Watchdog Tick"
+          if @watchdog_force
+            @watchdog_force = false
+            # force the watchdog to fire by killing the socket
+            @socket.close if @socket && !@socket.closed?
+            #@watchdog_count = @watchdog_max
+          end
+          if (@watchdog_count += WATCHDOG_STEP) >= @watchdog_max
+            my_logger level: 'warn', msg:  "Watchdog Fired"
+            @watchdog_count = 0.0
+            @watchdog_fired_count += 1
+            @watchdog_enabled = false
+            # Kill the readthread...
+            my_logger msg: "Watchdog Thread: Killing ReadThread"
+            Thread.kill(@readthread) if @readthread && @readthread.alive?
+            if @last_watch[:enable]
+              stop
+              sleep 0.5
+              my_logger msg: "Watchdog Thread: Send Last_Watch: #{@last_watch}"
+              @command = @last_watch
+              send_cmmd
+              my_logger msg: "Watchdog Thread: Thread.exit"
+              Thread.exit
+            else
+              close_socket
+            end
+          end
+          sleep WATCHDOG_STEP
+        end   # while Wchdog enabled
+        my_logger msg: "Closing Watchdog Thread"
+      end # wtchdg thread start do
+    end   # watchdog euthanize if
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    my_logger  msg:  "Start: Exiting Start"
+  end # def start
+
+  # initialize gpsd socket
+  def init_socket
+    my_logger  msg:  "Entered Init_socket"
+    begin
+      close_socket if @socket && !@socket.closed?
+      my_logger level: 'debug', msg: "Point 1"
+
+      # Send the 'Hello' message (Content apparently irrelevant)
+      @socket = TCPSocket.new(@host, @port)
+      my_logger level: 'debug', msg: "Point 2"
+
+      msg="This space for rent"
+      my_logger  level: 'info', msg:  "Init_socket: Sending Cmmd: \"#{msg}\""
+      @socket.puts(msg)
+      @sent_raw_callback.call( msg) if @sent_raw_callback
+
+      my_logger  msg:  "Init_socket: reading socket..."
+      welcome = ::JSON.parse @socket.gets.chomp
+      @json_raw_callback.call(welcome) if @json_raw_callback
+      my_logger  level: 'info', msg:  "Init_socket: Received welcome: #{welcome.inspect}"
+      @socket_ready = (welcome and welcome['class'] and welcome['class'] == 'VERSION')
+      @msg_counts[:ver] += 1 if @socket_ready
+      my_logger  level: 'info',msg:  "Init_socket: @socket_ready: #{@socket_ready.inspect}"
+    rescue
+      @socket_ready = false
+      my_logger  level: 'error', msg:  "Init_socket: Rescue: #$!"
+    end
+    my_logger  msg:  "Init_socket: Exiting init_socket"
+  end
+
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~ PROCESS RUN THREAD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+  # Read from socket. this should happen in a Thread as a continues loop. It should try to read data from the socket but nothing might happen if the gps deamon might not be ready. If ready it will send packets that we read and proces
+  def read_from_socket
+    my_logger  msg:  "Entered Read_from_socket"
+    if @socket_ready
+      my_logger  msg:  "Read_from_socket: Socket_ready"
+      begin
+        if input = @socket.gets.chomp and not input.to_s.empty?
+            parse_socket_json(json: JSON.parse(input))
+            @watchdog_count = 0
+            my_logger level: 'info', msg:  "Read_from_socket: Read: #{input}"
+        else
+            sleep 0.1
+        end
+      rescue StandardError => e
+#        my_logger level: 'error', msg:  "Read_from_socket: error reading from socket: #{$!}"
+        my_logger level: 'error', msg:  "Read_from_socket: error reading from socket: #{e.message}"
+        @socket_ready = !@socket.closed? if @socket
+      end
+    else
+      my_logger level: 'warn', msg:  "Read_from_socket: socket not ready"
+      sleep 0.1
+    end
+    my_logger  msg:  "Read_from_socket: Exiting"
+  end
+
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~ PROCESS SHUTDOWN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  # Stop the listening loop and close the socket. It will read the last bit of data from the socket, close it, and clean it up
+  def stop
+    my_logger level: 'info', msg:  "Entered Stop"
+    # last read(s)
+    3.times { |c| my_logger(  msg:  "Read loop #{c+1}"); read_from_socket }
+    # then close
+    close_socket
+    my_logger level: 'info', msg:  "Exiting Stop"
+  end
+
+  # Close the gps deamon socket
+  def close_socket
+    mutex = Mutex.new
+    mutex.synchronize do
+      my_logger  msg:  "Entered CloseSocket"
+      begin
+        Thread.kill(@socket_init_thread) if @socket_init_thread && @socket_init_thread.alive?
+        Thread.kill(@readthread) if @readthread && @readthread.alive?
+        @socket_ready = false
+        @socket.close if @socket && !@socket.closed?
+        @socket = nil
+        Thread.kill(@watchdogthread) if @watchdog_thread && @watchdog_thread.alive? && Thread.current[:name] != THREAD_NAMES[:WatchdogThread]
+        my_logger level: 'info', msg: "CloseSocket: Socket Closed & Threads Killed"
+      rescue
+        my_logger level: 'error', msg:  "CloseSocket Rescue: #$!"
+      end
+      my_logger  msg:  "Exiting CloseSocket"
+    end
+  end
+
+
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    # Proceses json object returned by gpsd daemon. The TPV and SKY object
+    # are used the most as they give info about satellites used and gps locations
+    # @param [JSON] json The object returned by the daemon
+    def parse_socket_json(json:)
+      @json_raw_callback.call(json) if @json_raw_callback
+
+      case json['class']
+      when 'TOFF'
+        @msg_counts[:toff] += 1
+      when 'ATT'
+        @msg_counts[:att] += 1
+      when 'ERR'
+        @msg_counts[:err] += 1
+      when 'GST'
+        @msg_counts[:gst] += 1
+      when 'POL'
+        @msg_counts[:pol] += 1
+      when 'DEVICE'
+        @msg_counts[:dev] += 1
+      when 'DEVICES'
+          # devices that are found, not needed
+          @msg_counts[:devs] += 1
+      when 'WATCH'
+          # gps deamon is ready and will send other packets, not needed yet
+          @msg_counts[:wtch] += 1
+      when 'TPV'
+          # gps position
+          #  "tag"=>"RMC", #  "device"=>"/dev/ttyS0", #  "mode"=>3,
+          #  "time"=>"2017-11-28T12:54:54.000Z", #  "ept"=>0.005, #  "lat"=>52.368576667,
+          #  "lon"=>4.901715, #  "alt"=>-6.2, #  "epx"=>2.738, #  "epy"=>3.5,
+          #  "epv"=>5.06, #  "track"=>198.53, #  "speed"=>0.19, #  "climb"=>0.0,
+          #  "eps"=>7.0, #  "epc"=>10.12
+          @msg_counts[:tpv] += 1
+=begin
+          if json['mode'] > 1
+             #we have a 2d or 3d fix
+              if is_new_measurement(json: json)
+                  json['time'] = DateTime.parse(json['time'])
+                  my_logger  level: 'info', msg:  "lat: #{json['lat']}, lng: #{json['lon']}, alt: #{json['alt']}, speed: #{json['speed']} at #{json['time']}, which is #{(Time.now - json['time'].to_time) * 1000}ms old"
+                  @json_pos_callback.call(json) if @json_pos_callback
+              end
+          end
+=end
+      when 'SKY'
+          # report on found satellites
+          @msg_counts[:sky] += 1
+=begin
+          sats = json['satellites']
+          if satellites_changed(sats: sats)
+              my_logger  level: 'info', msg:  "found #{sats.length} satellites, of which #{sats.count{|sat| sat['used']}} are used"
+              @json_sat_callback.call(sats) if @json_sat_callback
+          end
+=end
+      when 'PPS'
+        @msg_counts[:pps] += 1
+=begin
+        my_logger  level: 'info', msg:  "found PPS tag: #{json.inspect}"
+        @json_pps_callback.call(json) if @json_pps_callback
+=end
+      else
+        @msg_counts[:unk] += 1
+=begin
+        my_logger level: 'info', msg:  "found unknown tag: #{json.inspect}"
+        @json_unk_callback.call(json) if @json_unk_callback
+=end
+      end
+    end
+
+  # checks if the new satellites object return by the deamon is different enough compared
+  # to the last one, to use it
+  def satellites_changed(sats:)
+      if @sats.nil? or (@sats.length != sats.length or @sats.count{|sat| sat['used']} != sats.count{|sat| sat['used']})
+          @sats = sats
+          return true
+      end
+      return false
+  end
+
+  # checks if the new location object return by the deamon is different enough compared
+  # to the last one, to use it. it could be disregarded for example because the speed is to low, and you don't want to have the location jumping around when you stand still
+  def is_new_measurement(json:)
+      if @last.nil? or (@last['lat'] != json['lat'] and @last['lon'] != json['lon'] and json['speed'] >= @min_speed)
+          @last = json
+          return true
+      end
+      return false
+  end
+
+  # @return [string] status info string containing nr satellites, fix, speed
+  def to_status
+      return "lat: #{last['lat']}, lng: #{last['lon']}, speed:#{last['speed']}, sats: #{@sats.length}(#{@sats.count{|sat| sat['used']}})" if @socket_ready and @last and @sats
+      return "lat: #{last['lat']}, lng: #{last['lon']}, speed:#{last['speed']}" if @socket_ready and @last and @sats.nil?
+      return "sats: #{@sats.length}(#{@sats.count{|sat| sat['used']}}), no fix yet" if @socket_ready and @last.nil? and @sats
+      return "connected with gpsd, waiting for data" if @socket_ready
+      return "waiting for connection with gpsd" if @socket_ready == false
+  end
+
+  # @param [Object] options Possible options to pass (not used yet)
+  # @param [Block] block Block to call when new gps position json object comes from gpsd
+  def on_position_change(options:{}, &block)
+      @json_pos_callback = block
+  end
+
+  # @param [Object] options Possible options to pass (not used yet)
+  # @param [Block] block Block to call when new satellite info json object comes from gpsd
+  def on_satellites_change(options:{}, &block)
+      @json_sat_callback = block
+  end
+
+  # @param [Object] options Possible options to pass (not used yet)
+  # @param [Block] block Block to call when new pps info json object comes from gpsd
+  def on_pps_change(options:{}, &block)
+      @json_pps_callback = block
+  end
+
+  # @param [Object] options Possible options to pass (not used yet)
+  # @param [Block] block Block to call when new pps info json object comes from gpsd
+  def on_unk_change(options:{}, &block)
+      @json_unk_callback = block
+  end
+
+  def reset_msg_counts
+    @msg_counts.each_key { |k| @msg_counts[k] = 0 }
+  end
+
+  def self.version
+    MyGpsdClient_version::VERSION
+  end
+
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~ SETUP LOGGING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+LOG_LEVELS = {debug: Logger::DEBUG, info: Logger::INFO, warn: Logger::WARN,
+      error: Logger::ERROR, fatal: Logger::FATAL, unknown: Logger::UNKNOWN}
+
+  def my_logger(level: 'debug', msg: "Blank")
+    @logger.add (LOG_LEVELS[level.to_sym]) {"#{Thread.current[:name]} -- #{msg}"}
+  end
+
+  def new_logger( progname: nil, path:, format: nil, time_format: nil, level:  LOG_LEVELS[:debug])
+    logger = Logger.new(path)
+    logger.progname = progname if progname
+    logger.format = format if format
+    logger.level = level if level
+    logger.datetime_format = time_format if time_format
+    logger
+  end
+
+=begin
+  def self.logger
+    puts "In self.logger: log_path => #{@log_path}, @@logger.nil? => #{@@logger.nil?}"
+    @@logger ||= defined?(Rails) ? Rails.logger : Logger.new("log/MyGpsdClient.log")
+    puts "Exiting self.logger: @@logger => #{@@logger}"
+  end
+
+  def self.logger=(logger)
+    @@logger = logger
+  end
+=end
+
+end

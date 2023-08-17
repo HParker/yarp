@@ -1,0 +1,31 @@
+########################################################################################################################
+# Render a column into ruby
+########################################################################################################################
+
+require_relative '../../model/foreign_key'
+
+module Dbsketch
+	module Rendering
+		module Meta
+
+			class ForeignKeyRenderer
+
+				def initialize foreign_key_keyword: "Dbsketch::Model::ForeignKey.new"
+					### Preconditions
+					raise ArgumentError, "foreign_key_keyword is not a String" unless foreign_key_keyword.is_a? String
+					###
+					@foreign_key_keyword = foreign_key_keyword
+				end
+
+				def create foreign_key
+					### Preconditions
+					raise ArgumentError, "foreign_key is not a Dbsketch::Model::ForeignKey" unless foreign_key.is_a? Dbsketch::Model::ForeignKey
+					###
+					"#{@foreign_key_keyword}(\"#{foreign_key.name}\", #{foreign_key.constricted_column.name}, #{foreign_key.referenced_table.name}, #{foreign_key.referenced_table.name}['#{foreign_key.referenced_column.name}'])"
+				end
+
+			end
+
+		end
+	end
+end

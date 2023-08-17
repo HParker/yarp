@@ -1,0 +1,29 @@
+require 'http'
+
+module IOTServices
+  module Adapters
+    class HTTP
+      def initialize base_url: '', logger: nil
+        @base_url = base_url
+        @logger = logger
+      end
+
+      %i[get post put].each do |method|
+        define_method method do |url, args = {}|
+          request url, method, args
+        end
+      end
+
+      private
+
+      def request url, method, headers: {}, json: nil
+        http = ::HTTP.headers(headers)
+        http = http.use(logging: {logger: @logger}) if @logger
+        response = http.send(method, "#{@base_url}#{url}", json: json)
+        JsonResponse.new(response.status, response.body)
+      rescue ::HTTP::Error => e
+        raise NetworkError, e
+      end
+    end
+  end
+end

@@ -7,6 +7,6 @@ file = File.open("../invalid_files.txt")
 
 file.readlines.each do |line|
   fp = line.strip
-  name = File.basename(fp)
-  FileUtils.cp(line.strip, "test/fixtures/#{SecureRandom.hex}-#{name}")
+  name = File.basename(fp, ".rb")
+  FileUtils.cp(line.strip, "test/fixtures/#{SecureRandom.hex}-#{name}.txt")
 end

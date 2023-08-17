@@ -1,0 +1,78 @@
+module MkRepo
+  module Validator
+    class << self
+      def validate!(remote, opts)
+        validator_for(remote)
+          .new(remote, opts)
+          .validate!
+      end
+
+      def validator_for(remote)
+        remote.classify("mk_repo", "validator")
+      end
+    end
+
+    module Validations
+      attr_reader :namespace
+      attr_accessor :opts
+
+      def initialize(namespace, opts)
+        @namespace = namespace
+        @opts = opts
+      end
+
+      def validate!
+        required_attributes.each { |attr| public_send("validate_#{attr}") }
+
+        opts
+      end
+
+      [[:token, "-t"], [:user, "-u"]].each do |(attr, short)|
+        define_method "validate_#{attr}" do
+          opts[attr] ||= `git config --global #{namespace}.#{attr}`.chomp
+
+          method(:"raise_#{attr}_error").call if opts[attr].empty?
+        end
+
+        error_method = define_method "raise_#{attr}_error" do
+          raise StandardError, error_message(attr, short)
+        end
+        private error_method
+      end
+
+      private
+
+      def error_message(key, short)
+        <<~ERROR
+          Please provide a #{key} with `-#{short}', `--#{key}'.
+          Alternatively, you can set the #{key} with \
+`git config --global #{namespace}.#{key} YOUR_#{key.upcase}_HERE'
+        ERROR
+      end
+    end
+
+    class Github
+      include Validations
+
+      def required_attributes
+        [:token, :user]
+      end
+    end
+
+    class Gitlab
+      include Validations
+
+      def required_attributes
+        [:token]
+      end
+    end
+
+    class Bitbucket
+      include Validations
+
+      def required_attributes
+        [:token, :user]
+      end
+    end
+  end
+end

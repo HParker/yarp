@@ -1,0 +1,318 @@
+require "spec_helper"
+
+RSpec.describe Asciidoctor::BSI do
+  before(:all) do
+    @blank_hdr = blank_hdr_gen
+  end
+
+  it "does not introduce subheadings in normative references of one type" do
+    expect(xmlpp(strip_guid(Nokogiri::XML(Asciidoctor.convert(<<~"INPUT", backend: :bsi, header_footer: true)).at("//xmlns:bibliography").to_xml))).to be_equivalent_to xmlpp(<<~"OUTPUT")
+        = Document title
+        Author
+        :docfile: test.adoc
+        :nodoc:
+        :no-isobib-cache:
+
+        [bibliography]
+        == Normative References
+        * [[[ref4,REF4]]] REF4
+        * [[[ref6,REF6]]] REF6
+
+        [bibliography]
+        == Bibliography
+        * [[[ref5,REF5]]] REF5
+        INPUT
+        <bibliography>
+  <references id='_' normative='true' obligation='informative'>
+    <title>Normative references</title>
+    <p id='_'>
+      The following documents are referred to in the text in such a way that
+      some or all of their content constitutes provisions of this document.
+      For dated references, only the edition cited applies. For undated
+      references, the latest edition of the referenced document (including any
+      amendments) applies.
+    </p>
+    <bibitem id='ref4'>
+      <formattedref format='application/x-isodoc+xml'>REF4</formattedref>
+      <docidentifier type='metanorma'>[N1]</docidentifier>
+      <docidentifier>REF4</docidentifier>
+      <docnumber>4</docnumber>
+    </bibitem>
+    <bibitem id='ref6'>
+      <formattedref format='application/x-isodoc+xml'>REF6</formattedref>
+      <docidentifier type='metanorma'>[N2]</docidentifier>
+      <docidentifier>REF6</docidentifier>
+      <docnumber>6</docnumber>
+    </bibitem>
+  </references>
+  <references id='_' normative='false' obligation='informative'>
+  <title>Bibliography</title>
+  <p id='_'>
+    For dated references, only the edition cited applies. For undated
+    references, the latest edition of the referenced document (including any
+    amendments) applies.
+  </p>
+  <bibitem id='ref5'>
+    <formattedref format='application/x-isodoc+xml'>REF5</formattedref>
+    <docidentifier type='metanorma'>[1]</docidentifier>
+    <docidentifier>REF5</docidentifier>
+    <docnumber>5</docnumber>
+  </bibitem>
+</references>
+</bibliography>
+        OUTPUT
+  end
+
+  it "sorts references" do
+    VCR.use_cassette "multistandard" do
+      expect(xmlpp(strip_guid(Asciidoctor.convert(<<~"INPUT", backend: :bsi, header_footer: true)))).to be_equivalent_to xmlpp(<<~"OUTPUT")
+        = Document title
+        Author
+        :docfile: test.adoc
+        :nodoc:
+        :no-isobib-cache:
+
+        <<ref3>>
+        <<ref7>>
+        <<ref6>>
+        <<ref1>>
+        <<ref4>>
+        <<ref5>>
+        <<ref2>>
+
+        [bibliography]
+        == Normative References
+        * [[[ref4,REF4]]] REF4
+        * [[[ref5,ISO 639:1967]]] REF5
+        * [[[ref6,REF6]]] REF6
+        * [[[ref7,IETF RFC 7749]]] REF7
+
+        [bibliography]
+        == Bibliography
+        * [[[ref1,REF1]]] REF1
+        * [[[ref2,ISO 15124]]] REF2
+        * [[[ref3,REF3]]] REF3
+      INPUT
+        #{@blank_hdr}
+         <preface>
+           <foreword id='_' obligation='informative'>
+             <title>FOREWORD</title>
+             <p id='_'>
+               <eref type='inline' bibitemid='ref3' citeas='[1]'/>
+               <eref type='inline' bibitemid='ref7' citeas='IETF RFC 7749'/>
+               <eref type='inline' bibitemid='ref6' citeas='[N1]'/>
+               <eref type='inline' bibitemid='ref1' citeas='[2]'/>
+               <eref type='inline' bibitemid='ref4' citeas='[N2]'/>
+               <eref type='inline' bibitemid='ref5' citeas='ISO/R 639:1967'/>
+               <eref type='inline' bibitemid='ref2' citeas='ISO/IEC ISP 15124-1:1998'/>
+             </p>
+           </foreword>
+         </preface>
+         <sections> </sections>
+         <bibliography>
+           <clause id='_' obligation='informative'>
+             <title>Normative references</title>
+             <p id='_'>
+               The following documents are referred to in the text in such a way that
+               some or all of their content constitutes provisions of this document.
+               For dated references, only the edition cited applies. For undated
+               references, the latest edition of the referenced document (including any
+               amendments) applies.
+             </p>
+             <references normative='true' unnumbered='true'>
+               <title>Standards publications</title>
+               <bibitem id='ref7' type='standard'>
+                 <fetched>#{Date.today}</fetched>
+                 <title format='text/plain' language='en' script='Latn'>The &#8220;xml2rfc&#8221; Version 2 Vocabulary</title>
+                 <uri type='xml'>
+                   https://raw.githubusercontent.com/relaton/relaton-data-ietf/master/data/reference.RFC.7749.xml
+                 </uri>
+                 <uri type='src'>https://www.rfc-editor.org/info/rfc7749</uri>
+                 <docidentifier type='IETF'>RFC 7749</docidentifier>
+                 <docidentifier type='rfc-anchor'>RFC7749</docidentifier>
+                 <docidentifier type='DOI'>10.17487/RFC7749</docidentifier>
+                 <date type='published'>
+                   <on>2016-02</on>
+                 </date>
+                 <contributor>
+                   <role type='author'/>
+                   <person>
+                     <name>
+                       <completename language='en'>J. Reschke</completename>
+                     </name>
+                     <affiliation>
+                       <organization>
+                         <name>Internet Engineering Task Force</name>
+                         <abbreviation>IETF</abbreviation>
+                       </organization>
+                     </affiliation>
+                   </person>
+                 </contributor>
+                 <contributor>
+                   <role type='publisher'/>
+                   <organization>
+                     <name>Internet Engineering Task Force</name>
+                     <abbreviation>IETF</abbreviation>
+                   </organization>
+                 </contributor>
+                 <language>en</language>
+                 <script>Latn</script>
+                 <abstract format='text/plain' language='en' script='Latn'>
+                   This document defines the &#8220;xml2rfc&#8221; version 2
+                   vocabulary: an XML-based language used for writing RFCs and
+                   Internet-Drafts.Version 2 represents the state of the vocabulary (as
+                   implemented by several tools and as used by the RFC Editor) around
+                   2014.This document obsoletes RFC 2629.
+                 </abstract>
+                 <series type='main'>
+                   <title format='text/plain' language='en' script='Latn'>RFC</title>
+                   <number>7749</number>
+                 </series>
+                 <place>Fremont, CA</place>
+               </bibitem>
+               <bibitem id='ref5' type='standard'>
+                 <fetched>#{Date.today}</fetched>
+                 <title type='title-main' format='text/plain' language='en' script='Latn'>Symbols for languages, countries and authorities</title>
+                 <title type='main' format='text/plain' language='en' script='Latn'>Symbols for languages, countries and authorities</title>
+                 <uri type='src'>https://www.iso.org/standard/4765.html</uri>
+                 <uri type='rss'>https://www.iso.org/contents/data/standard/00/47/4765.detail.rss</uri>
+                 <docidentifier type='ISO'>ISO/R 639:1967</docidentifier>
+                 <docidentifier type='URN'>urn:iso:std:iso-r:r:639:stage-95.99:ed-1:en</docidentifier>
+                 <docnumber>639</docnumber>
+                 <date type='published'>
+                   <on>1967-11</on>
+                 </date>
+                 <contributor>
+                   <role type='publisher'/>
+                   <organization>
+                     <name>International Organization for Standardization</name>
+                     <abbreviation>ISO</abbreviation>
+                     <uri>www.iso.org</uri>
+                   </organization>
+                 </contributor>
+                 <edition>1</edition>
+                 <language>en</language>
+                 <script>Latn</script>
+                 <status>
+                   <stage>95</stage>
+                   <substage>99</substage>
+                 </status>
+                 <copyright>
+                   <from>1967</from>
+                   <owner>
+                     <organization>
+                       <name>ISO/R</name>
+                     </organization>
+                   </owner>
+                 </copyright>
+                 <place>Geneva</place>
+               </bibitem>
+             </references>
+             <references normative='true' unnumbered='true'>
+               <title>Other publications</title>
+               <bibitem id='ref6'>
+                 <formattedref format='application/x-isodoc+xml'>REF6</formattedref>
+                 <docidentifier type='metanorma'>[N1]</docidentifier>
+                 <docidentifier>REF6</docidentifier>
+                 <docnumber>6</docnumber>
+               </bibitem>
+               <bibitem id='ref4'>
+                 <formattedref format='application/x-isodoc+xml'>REF4</formattedref>
+                 <docidentifier type='metanorma'>[N2]</docidentifier>
+                 <docidentifier>REF4</docidentifier>
+                 <docnumber>4</docnumber>
+               </bibitem>
+             </references>
+           </clause>
+           <references id='_' normative='false' obligation='informative'>
+             <title>Bibliography</title>
+             <references normative='false' unnumbered='true'>
+               <title>Standards publications</title>
+               <p id='_'>
+  For dated references, only the edition cited applies. For undated
+  references, the latest edition of the referenced document (including
+  any amendments) applies.
+</p>
+               <bibitem id='ref2' type='standard'>
+                 <fetched>#{Date.today}</fetched>
+                 <title type='title-intro' format='text/plain' language='en' script='Latn'>Information technology</title>
+                 <title type='title-main' format='text/plain' language='en' script='Latn'>International Standardized Profile FOD126</title>
+                 <title type='title-part' format='text/plain' language='en' script='Latn'>
+                   Open Document Format: Image
+                   Applications&#8201;&#8212;&#8201;Enhanced document
+                   structure&#8201;&#8212;&#8201;Character, raster graphics, and
+                   geometric graphics content architecture&#8201;&#8212;&#8201;Part 1:
+                   Document Application Profile (DAP)
+                 </title>
+                 <title type='main' format='text/plain' language='en' script='Latn'>
+                   Information technology&#8201;&#8212;&#8201;International
+                   Standardized Profile FOD126&#8201;&#8212;&#8201;Open Document
+                   Format: Image Applications&#8201;&#8212;&#8201;Enhanced document
+                   structure&#8201;&#8212;&#8201;Character, raster graphics, and
+                   geometric graphics content architecture&#8201;&#8212;&#8201;Part 1:
+                   Document Application Profile (DAP)
+                 </title>
+                 <uri type='src'>https://www.iso.org/standard/26440.html</uri>
+                 <uri type='rss'>https://www.iso.org/contents/data/standard/02/64/26440.detail.rss</uri>
+                 <docidentifier type='ISO'>ISO/IEC ISP 15124-1:1998</docidentifier>
+                 <docidentifier type='URN'>urn:iso:std:iso-iec:isp:15124:-1:stage-95.99:ed-1:en</docidentifier>
+                 <docnumber>15124</docnumber>
+                 <date type='published'>
+                   <on>1998-07</on>
+                 </date>
+                 <contributor>
+                   <role type='publisher'/>
+                   <organization>
+                     <name>International Organization for Standardization</name>
+                     <abbreviation>ISO</abbreviation>
+                     <uri>www.iso.org</uri>
+                   </organization>
+                 </contributor>
+                 <contributor>
+                   <role type='publisher'/>
+                   <organization>
+                     <name>International Electrotechnical Commission</name>
+                     <abbreviation>IEC</abbreviation>
+                     <uri>www.iec.ch</uri>
+                   </organization>
+                 </contributor>
+                 <edition>1</edition>
+                 <language>en</language>
+                 <script>Latn</script>
+                 <status>
+                   <stage>95</stage>
+                   <substage>99</substage>
+                 </status>
+                 <copyright>
+                   <from>1998</from>
+                   <owner>
+                     <organization>
+                       <name>ISO/IEC</name>
+                     </organization>
+                   </owner>
+                 </copyright>
+                 <place>Geneva</place>
+               </bibitem>
+             </references>
+             <references normative='false' unnumbered='true'>
+               <title>Other publications</title>
+               <bibitem id='ref3'>
+                 <formattedref format='application/x-isodoc+xml'>REF3</formattedref>
+                 <docidentifier type='metanorma'>[1]</docidentifier>
+                 <docidentifier>REF3</docidentifier>
+                 <docnumber>3</docnumber>
+               </bibitem>
+               <bibitem id='ref1'>
+                 <formattedref format='application/x-isodoc+xml'>REF1</formattedref>
+                 <docidentifier type='metanorma'>[2]</docidentifier>
+                 <docidentifier>REF1</docidentifier>
+                 <docnumber>1</docnumber>
+               </bibitem>
+             </references>
+           </references>
+         </bibliography>
+       </bsi-standard>
+      OUTPUT
+    end
+  end
+end

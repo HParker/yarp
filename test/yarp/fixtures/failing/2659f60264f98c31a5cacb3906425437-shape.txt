@@ -1,0 +1,100 @@
+require_relative "Shapestruct.rb"
+class Polygon
+	attr_accessor :sides
+	def _sides; @sides.length; end
+	def initialize(*sides)
+		@sides, i = sides, 0
+		for side in @sides
+			side = @sides[i]
+			i += 1
+		end
+	end
+	def perimeter
+		p = 0
+		for side in @sides; p += side; end
+		return p
+	end
+end
+class Quadrilateral < Polygon
+	def _sides; 4; end
+	def initialize(side1, side2, side3, side4)
+		@sidelength = 4, [side1, side2, side3, side4]
+	end
+end
+class Rectangle < Quadrilateral
+	attr_reader :length, :width
+	def initialize(length, width); @length, @width = length, width; end
+	def perimeter; @width*2+@length*2; end
+	def area; @length*@width; end
+	def diagram; "\u25AD"; end
+end
+class Square < Rectangle
+	attr_reader :side
+	def initialize(side); @side = side; end
+	def perimeter; @side*4; end
+	def area; @side**2; end
+	def diagram
+		if @side < 25; "\u2b1e"
+		elsif @side < 50; "\u25ab"
+		elsif @side < 75; "\u25fb"
+		else; "\u2b1c"
+		end
+	end
+end
+class Rhombus < Quadrilateral
+	attr_reader :base, :height, :side
+	def initialize(arg = Hash.new(0)); @base, @height, @side = arg[:base], arg[:height], arg[:side]; end
+	def area; (@base*@height)/2; end
+	def perimeter; @side**2; end
+end
+class Triangle < Polygon
+	def _sides; 3; end
+	attr_reader :base, :height
+	def initialize(s1, s2, s3, arg = Hash.new); @base, @height, @sides = arg[:base], arg[:height], [s1, s2, s3]; end
+	def area; (@base*@height)/2; end
+	def diagram
+		if self.equilateral?; "\u25b3"
+		else; "\u22bf"; end
+	end
+	def equilateral?
+		s, eq = @sides[1], true
+		for side in @sides
+			eq = false unless side == s
+			s = side
+		end
+		return eq
+	end
+	def isosceles?
+		unless self.equilateral?
+			if (@sides[0] == @sides[1] && @sides[0] != @sides[2]) || (@sides[0] != @sides[1] && @sides[0] == @sides[2]); return true
+			else return false
+			end
+		else; return false
+		end
+	end
+	def scalene?
+		true unless self.equilateral? || self.isosceles?
+	end
+end
+class Circle
+	attr_reader :radius
+	def initialize(radius); @radius = radius; end
+	def circumference; 2*Math::PI*@radius; end
+	def area; Math::PI*@radius**2; end
+	def diagram; "\u25cb"; end
+end
+class Parallelogram < Quadrilateral
+	attr_reader :base, :height, :side
+	def initialize(args = Hash.new(0)); @base, @height, @side = args[:base], args[:height], args[:side]; end
+	def area; @base*@height; end
+	def perimeter; @base*2+@side*2; end
+end
+class Pentagon < Polygon # Regular Pentagon
+	include Math
+	attr_reader :side
+	def initialize(side); @side = side; end
+	def _sides; 5; end
+	def diagram; "\u2b20"; end
+	def area; (5* @side ** 2 * tan(54))/4; end
+end
+__END__

@@ -1,0 +1,66 @@
+require 'asbru/components/savage'
+
+module Asbru
+  # This module defines a bunch of methods that make component based pages
+  # appear more similar to HTML.
+  # The limitation is that nested components won't work.
+  module Cml
+    C = Asbru::Config.component_mode.tap(&:setup)
+
+    class << self
+      def p text, **opts
+        C.send "#{prefix(opts)}_content",
+            text: text,
+            **opts
+      end
+
+      def h1 text, **opts
+        C.send "#{prefix(opts)}_title",
+            size: 'h1',
+            text: text
+      end
+
+      def h2 text, **opts
+        C.send "#{prefix(opts)}_title",
+            size: 'h2',
+            text: text
+      end
+
+      def h3 text, **opts
+        C.send "#{prefix(opts)}_title",
+            size: 'h3',
+            text: text
+      end
+
+      def h4 text, **opts
+        C.send "#{prefix(opts)}_title",
+            size: 'h4',
+            text: text
+      end
+
+      def h5 text, **opts
+        C.send "#{prefix(opts)}_title",
+            size: 'h5',
+            text: text
+      end
+
+      def hr color: 'stable-500', **opts
+        C.send "#{prefix}_divider",
+            color: color,
+            height: 1
+      end
+
+      def vertical_spacer height, **opts
+        C.send "#{prefix(opts)}_divider",
+            color: :transparent,
+            height: height
+      end
+
+      private
+
+      def prefix(opts)
+        opts[:module] || Asbru.config.component_prefix
+      end
+    end
+  end
+end

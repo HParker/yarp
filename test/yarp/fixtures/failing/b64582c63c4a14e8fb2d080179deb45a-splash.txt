@@ -1,0 +1,181 @@
+require_relative '../../lib/common_functions'
+require 'httparty'
+module NaviClientInstaller
+  class SplashWindow
+
+    attr_accessor :window_ui
+
+    include CommonFunctions
+
+    def initialize(settings=nil)
+      @builder = Gtk::Builder.new(:resource => '/com/navi/navi-client/ui/splash.ui')
+      css_provider = Gtk::CssProvider.new
+      css_provider.load(:resource_path => '/com/navi/navi-client/css/main.css')
+      @settings = settings
+
+      @window_ui = @builder.get_object("box_splash")
+
+      splash_image = @builder.get_object("splash_image")
+      splash_image.set_from_resource('/com/navi/navi-client/images/navi-logo.png')
+
+      @count =1
+      @timeout = GLib::Timeout.add(690) do
+
+        screen = @builder.get_object("spash_revealer")
+        screen.reveal_child = true
+
+      end
+
+
+      apply_css @window_ui, css_provider
+
+    end
+
+    def get_current_user url: "#{ENV['api_url']}/get_current_user", token:
+      HTTParty.get(url, headers: {"Authorization": token})
+    end
+
+    def validate_email(email, pass)
+      # need to remove this hardcoded code
+      begin
+        response = HTTParty.post(ENV['api_url'] + "/auth/sign_in",
+                      body: {
+                          email: email, # get from sso_web application
+                          password: pass
+                      }
+        )
+        #
+        # if response.code == 200 && response.headers['access-token']
+        #   #user_resp = get_current_user token: "Token: #{response["access_token"]}##{email}"
+        #
+        #   return response
+        # else
+        #   return nil
+        # end
+
+        return response
+      rescue
+        false
+      end
+    end
+
+    def initiate_signup callback, back_callback=nil
+
+
+      login_info = @builder.get_object("view_splash_info")
+      spinner = @builder.get_object("spinner_splash_loader")
+      error_label = @builder.get_object("label_splash_error")
+      # @spinner.active = true
+
+      email_entry = @builder.get_object("entry_splash_email")
+      password_entry = @builder.get_object("entry_splash_pass")
+      back_btn = @builder.get_object("back")
+      connect_btn = @builder.get_object("connect_btn")
+
+      email_entry.set_text @settings.username
+      password_entry.set_text ""
+
+      if login_info.label.to_s.empty?
+        back_btn.signal_connect("clicked") {|widget|
+          back_callback&.call true
+        }
+
+        connect_btn.signal_connect("clicked") {|widget|
+          unless password_entry.text.empty?
+            spinner.active = true
+            password_entry.sensitive = false
+            connect_btn.sensitive = false
+
+            response = validate_email @settings.username, password_entry.text
+
+            spinner.active = false
+            password_entry.sensitive = true
+            connect_btn.sensitive = true
+
+            if response && response.code == 200
+              error_label.set_opacity 0
+
+              @settings.hash = password_entry.text
+              # @settings.identifier = JSON.parse(Base64.decode64(response["user"]))["resource_name"]
+              @settings.identifier = response['data']['resource_name']
+              @settings.save_settings
+
+              callback.call response.headers["access-token"], response.headers["client"]
+            else
+              error_label.set_opacity 1
+            end
+          end
+        }
+
+        password_entry.signal_connect("activate") {|widget|
+          unless widget.text.empty?
+            spinner.active = true
+            password_entry.sensitive = false
+            connect_btn.sensitive = false
+
+            response = validate_email @settings.username, widget.text
+
+            spinner.active = false
+            password_entry.sensitive = true
+            connect_btn.sensitive = true
+
+            if response && response.code == 200
+              error_label.set_opacity 0
+              @settings.hash = widget.text
+              # @settings.identifier = JSON.parse(Base64.decode64(response["user"]))["resource_name"]
+              @settings.identifier = response['data']['resource_name']
+              @settings.save_settings
+              callback.call response.headers["access-token"], response.headers["client"]
+            else
+              error_label.set_opacity 1
+            end
+          end
+        }
+
+        # create_tags(login_info.buffer)
+
+        login_info.label =  "Please connect to our app using your preferred email address."
+        # login_info.buffer.insert(login_info.buffer.get_iter_at(:offset => 0), "Please connect to our app using your preferred email address.")
+
+      end
+
+
+      show_signup
+    end
+
+    def show_signup
+      @builder.get_object("loading_spinner")&.visible = false
+      @signup_control = @builder.get_object("box_splash_login")
+      @signup_control&.visible = true
+    end
+
+    def add_timeout
+      @timeout = GLib::Timeout.add(690) do
+        name = "revealer#{@count}"
+
+        revealer = @builder[name]
+        revealer.reveal_child = true
+
+        revealer.signal_connect "notify::child-revealed" do |widget|
+          if widget.mapped?
+            revealed = widget.child_revealed?
+            widget.reveal_child = !revealed
+          end
+        end
+
+        @count += 1
+        if @count >= 9
+          @timeout = nil
+          false
+        else
+          true
+        end
+      end
+    end
+
+  end
+end
+
+
+
+

@@ -1,0 +1,230 @@
+# -*- coding: utf-8 -*-
+# -*- mode: Ruby -*-
+
+# Copyright © 2013-2016, Christopher Mark Gore,
+# Soli Deo Gloria,
+# All rights reserved.
+#
+# 2317 South River Road, Saint Charles, Missouri 63303 USA.
+# Web: http://cgore.com
+# Email: cgore@cgore.com
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#
+#   * Neither the name of Christopher Mark Gore nor the names of other
+#     contributors may be used to endorse or promote products derived from
+#     this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+
+module Teepee
+  module CommanderMixins
+    module Control
+      def case_operator expressions
+        value, _, *rest = strip expressions
+        if value and not rest.empty?
+          def cond_helper value, expressions
+            test_value, _, form, *rest = strip expressions
+            if equal [value.to_html, test_value.to_html]
+              form
+            elsif not rest.empty?
+              cond_helper value, rest
+            end
+          end
+          cond_helper value, rest
+        end
+      end
+
+      def comment expressions
+        nil
+      end
+
+      def cond_operator expressions
+        conditional, _, form, *body = strip expressions
+        if true_constant? conditional.to_html
+          form
+        elsif not body.empty?
+          cond_operator body
+        end
+      end
+
+      def decrement variable
+        k = variable.to_html
+        return variable_not_defined_error k if not is_defined? k
+        old_value = get_operator(k).to_number
+        return non_numeric_error old_value if not numeric? old_value
+        update_variable k, old_value - 1
+      end
+
+      def define expressions
+        variable, _, value = expressions
+        k = variable.to_html
+        v = value.to_html
+        @parser.variables[k] = v
+        get_operator k
+      end
+
+      def is_defined? variables
+        if not variables.is_a? Array
+          return is_defined? [variables]
+        else
+          Set.new(variables.map(&:to_html))
+            .subset? Set.new(scope.keys + @parser.variables.keys)
+        end
+      end
+
+      def is_scoped? variables
+        if not variables.is_a? Array
+          return is_scoped? [variables]
+        else
+          Set.new(variables.map(&:to_html))
+            .subset? Set.new(scope.keys)
+        end
+      end
+
+      def update_variable variable, value
+        k = variable.to_html
+        value = value.to_html
+        if is_scoped? k
+          scope[k] = value
+        elsif is_defined? k
+          @parser.variables[k] = value
+        else
+          variable_not_defined_error k
+        end
+        value
+      end
+
+      def dotimes expressions
+        n = expressions.first.to_number
+        return "" if n.nil? or n < 1
+        span_operator expressions[1..-1] * n
+      end
+
+      def equal expressions
+        if expressions.empty?
+          true_constant
+        elsif expressions.length == 1
+          true_constant
+        else
+          expressions[0].to_html == expressions[1].to_html and equal expressions.rest
+        end
+      end
+
+      def get_operator variable
+        key = variable.to_html
+        if scope.has_key? key
+          scope[key]
+        elsif @parser.variables.has_key? key
+          @parser.variables[key].to_html
+        else
+          variable_not_defined_error key
+        end
+      end
+
+      def if_operator expressions
+        expressions = strip expressions
+        conditional, _, true_clause, _, false_clause = expressions
+        if true_constant? conditional.to_html
+          true_clause.to_html
+        elsif false_clause
+          false_clause.to_html
+        end
+      end
+
+      def increment variable
+        k = variable.to_html
+        return variable_not_defined_error k if not is_defined? k
+        old_value = get_operator(k).to_number
+        return non_numeric_error old_value if not numeric? old_value
+        update_variable k, old_value + 1
+      end
+
+      def update_scopes body
+        body.map {|node| node.use_scope scope}
+        body
+      end
+
+      def let1 expressions
+        variable, _, value, _, *body = expressions
+        scope[variable.to_html] = value.to_html
+        update_scopes(body).map(&:to_html)
+      end
+
+      def not_equal numbers
+        if numbers.empty?
+          true_constant
+        elsif numbers.length == 1
+          true_constant
+        else
+          numbers[0].to_number != numbers[1].to_number and equal numbers.rest
+        end
+      end
+
+      def prog1_operator expressions
+        expressions.map(&:to_html).first
+      end
+
+      def progn_operator expressions
+        expressions.map(&:to_html).last
+      end
+
+      def prognil expressions
+        expressions.map(&:to_html)
+        ""
+      end
+
+      def undefine expressions
+        expressions.each do |expression|
+          @parser.variables.delete expression.to_html
+        end
+        ""
+      end
+
+      def unless_operator expressions
+        expressions = strip expressions
+        conditional = expressions.first
+        expressions = strip expressions.rest
+        if false_constant? conditional.to_html
+          if expressions.length <= 1
+            expressions.first
+          else
+            span_operator expressions
+          end
+        end
+      end
+
+      def when_operator expressions
+        expressions = strip expressions
+        conditional = expressions.first
+        expressions = strip expressions.rest
+        if true_constant? conditional.to_html
+          if expressions.length <= 1
+            expressions.first
+          else
+            span_operator expressions
+          end
+        end
+      end
+    end
+  end
+end

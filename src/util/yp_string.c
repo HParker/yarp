@@ -63,13 +63,13 @@ yp_string_memsize(const yp_string_t *string) {
 // Ensure the string is owned. If it is not, then reinitialize it as owned and
 // copy over the previous source.
 void
-yp_string_ensure_owned(yp_string_t *string) {
+yp_string_ensure_owned(yp_allocator_t *allocator, yp_string_t *string) {
     if (string->type == YP_STRING_OWNED) return;
 
     size_t length = yp_string_length(string);
     const char *source = yp_string_source(string);
 
-    char *memory = malloc(length);
+    char *memory = yp_malloc(allocator, length);
     if (!memory) return;
 
     yp_string_owned_init(string, memory, length);

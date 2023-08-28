@@ -10,6 +10,7 @@
 #define YP_NEWLINE_LIST_H
 
 #include "yarp/defines.h"
+#include "yarp/util/yp_alloc.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -56,6 +57,6 @@ bool yp_newline_list_check_append(yp_newline_list_t *list, const char *cursor);
 yp_line_column_t yp_newline_list_line_column(yp_newline_list_t *list, const char *cursor);
 
 // Free the internal memory allocated for the newline list.
-void yp_newline_list_free(yp_newline_list_t *list);
+void yp_newline_list_free(yp_allocator_t *allocator, yp_newline_list_t *list);
 
 #endif

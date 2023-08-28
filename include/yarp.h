@@ -1,6 +1,7 @@
 #ifndef YARP_H
 #define YARP_H
 
+
 #include "yarp/defines.h"
 #include "yarp/ast.h"
 #include "yarp/diagnostic.h"
@@ -9,6 +10,7 @@
 #include "yarp/parser.h"
 #include "yarp/regexp.h"
 #include "yarp/unescape.h"
+#include "yarp/util/yp_alloc.h"
 #include "yarp/util/yp_buffer.h"
 #include "yarp/util/yp_char.h"
 #include "yarp/util/yp_memchr.h"

@@ -4,6 +4,7 @@
 #include "yarp/ast.h"
 #include "yarp/defines.h"
 #include "yarp/enc/yp_encoding.h"
+#include "yarp/util/yp_alloc.h"
 #include "yarp/util/yp_constant_pool.h"
 #include "yarp/util/yp_list.h"
 #include "yarp/util/yp_newline_list.h"
@@ -316,6 +317,8 @@ struct yp_parser {
         size_t index;                           // the current index into the lexer mode stack
     } lex_modes;
 
+    yp_allocator_t allocator;
+    
     const char *start;   // the pointer to the start of the source
     const char *end;     // the pointer to the end of the source
     yp_token_t previous; // the previous token we were considering

@@ -3,6 +3,7 @@
 
 #include "yarp/defines.h"
 #include "yarp/util/yp_string.h"
+#include "yarp/util/yp_alloc.h"
 
 #include <stddef.h>
 #include <stdlib.h>

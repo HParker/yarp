@@ -7,6 +7,7 @@
 #define YP_CONSTANT_POOL_H
 
 #include "yarp/defines.h"
+#include "yarp/util/yp_alloc.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -62,6 +63,6 @@ bool yp_constant_pool_init(yp_constant_pool_t *pool, size_t capacity);
 yp_constant_id_t yp_constant_pool_insert(yp_constant_pool_t *pool, const char *start, size_t length);
 
 // Free the memory associated with a constant pool.
-void yp_constant_pool_free(yp_constant_pool_t *pool);
+void yp_constant_pool_free(yp_allocator_t *allocator, yp_constant_pool_t *pool);
 
 #endif

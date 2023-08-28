@@ -2,6 +2,7 @@
 #define YARP_STRING_H
 
 #include "yarp/defines.h"
+#include "yarp/util/yp_alloc.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -43,7 +44,7 @@ size_t yp_string_memsize(const yp_string_t *string);
 
 // Ensure the string is owned. If it is not, then reinitialize it as owned and
 // copy over the previous source.
-void yp_string_ensure_owned(yp_string_t *string);
+void yp_string_ensure_owned(yp_allocator_t *allocator, yp_string_t *string);
 
 // Returns the length associated with the string.
 YP_EXPORTED_FUNCTION size_t yp_string_length(const yp_string_t *string);

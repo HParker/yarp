@@ -2,6 +2,7 @@
 #define YARP_BUFFER_H
 
 #include "yarp/defines.h"
+#include "yarp/util/yp_alloc.h"
 
 #include <assert.h>
 #include <stdbool.h>

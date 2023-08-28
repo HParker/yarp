@@ -207,7 +207,7 @@ lex_mode_push(yp_parser_t *parser, yp_lex_mode_t lex_mode) {
     parser->lex_modes.index++;
 
     if (parser->lex_modes.index > YP_LEX_STACK_SIZE - 1) {
-        parser->lex_modes.current = (yp_lex_mode_t *) malloc(sizeof(yp_lex_mode_t));
+        parser->lex_modes.current = (yp_lex_mode_t *) yp_malloc(&parser->allocator, sizeof(yp_lex_mode_t));
         if (parser->lex_modes.current == NULL) return false;
 
         *parser->lex_modes.current = lex_mode;
@@ -338,7 +338,7 @@ lex_mode_pop(yp_parser_t *parser) {
     } else {
         parser->lex_modes.index--;
         yp_lex_mode_t *prev = parser->lex_modes.current->prev;
-        free(parser->lex_modes.current);
+        yp_free(&parser->allocator, parser->lex_modes.current);
         parser->lex_modes.current = prev;
     }
 }
@@ -527,6 +527,7 @@ static void
 yp_arguments_validate(yp_parser_t *parser, yp_arguments_t *arguments) {
     if (arguments->block != NULL && arguments->implicit_block) {
         yp_diagnostic_list_append(
+            &parser->allocator,
             &parser->error_list,
             arguments->block->base.location.start,
             arguments->block->base.location.end,
@@ -4077,7 +4078,7 @@ yp_string_node_to_symbol_node(yp_parser_t *parser, yp_string_node_t *node, const
     // We are explicitly _not_ using yp_node_destroy here because we don't want
     // to trash the unescaped string. We could instead copy the string if we
     // know that it is owned, but we're taking the fast path for now.
-    free(node);
+    yp_free(&parser->allocator, node);
 
     return new_node;
 }
@@ -4101,7 +4102,7 @@ yp_symbol_node_to_string_node(yp_parser_t *parser, yp_symbol_node_t *node) {
     // We are explicitly _not_ using yp_node_destroy here because we don't want
     // to trash the unescaped string. We could instead copy the string if we
     // know that it is owned, but we're taking the fast path for now.
-    free(node);
+    yp_free(&parser->allocator, node);
 
     return new_node;
 }
@@ -4408,7 +4409,7 @@ yp_yield_node_create(yp_parser_t *parser, const yp_token_t *keyword, const yp_lo
 // Allocate and initialize a new scope. Push it onto the scope stack.
 static bool
 yp_parser_scope_push(yp_parser_t *parser, bool closed) {
-    yp_scope_t *scope = (yp_scope_t *) malloc(sizeof(yp_scope_t));
+    yp_scope_t *scope = (yp_scope_t *) yp_malloc(&parser->allocator, sizeof(yp_scope_t));
     if (scope == NULL) return false;
 
     *scope = (yp_scope_t) { .closed = closed, .previous = parser->current_scope };
@@ -4466,7 +4467,7 @@ yp_parser_parameter_name_check(yp_parser_t *parser, yp_token_t *name) {
     yp_constant_id_t constant_id = yp_parser_constant_id_token(parser, name);
 
     if (yp_constant_id_list_includes(&parser->current_scope->locals, constant_id)) {
-        yp_diagnostic_list_append(&parser->error_list, name->start, name->end, "Duplicated parameter name.");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, name->start, name->end, "Duplicated parameter name.");
     }
 }
 
@@ -4475,7 +4476,7 @@ static void
 yp_parser_scope_pop(yp_parser_t *parser) {
     yp_scope_t *scope = parser->current_scope;
     parser->current_scope = scope->previous;
-    free(scope);
+    yp_free(&parser->allocator, scope);
 }
 
 /******************************************************************************/
@@ -4811,7 +4812,7 @@ parser_lex_encoding_comment(yp_parser_t *parser) {
     // didn't understand the encoding that the user was trying to use. In this
     // case we'll keep using the default encoding but add an error to the
     // parser to indicate an unsuccessful parse.
-    yp_diagnostic_list_append(&parser->error_list, encoding_start, encoding_end, "Could not understand the encoding specified in the magic comment.");
+    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, encoding_start, encoding_end, "Could not understand the encoding specified in the magic comment.");
 }
 
 /******************************************************************************/
@@ -4885,7 +4886,7 @@ context_recoverable(yp_parser_t *parser, yp_token_t *token) {
 
 static bool
 context_push(yp_parser_t *parser, yp_context_t context) {
-    yp_context_node_t *context_node = (yp_context_node_t *) malloc(sizeof(yp_context_node_t));
+    yp_context_node_t *context_node = (yp_context_node_t *) yp_malloc(&parser->allocator, sizeof(yp_context_node_t));
     if (context_node == NULL) return false;
 
     *context_node = (yp_context_node_t) { .context = context, .prev = NULL };
@@ -4903,11 +4904,11 @@ context_push(yp_parser_t *parser, yp_context_t context) {
 static void
 context_pop(yp_parser_t *parser) {
     if (parser->current_context->prev == NULL) {
-        free(parser->current_context);
+        yp_free(&parser->allocator, parser->current_context);
         parser->current_context = NULL;
     } else {
         yp_context_node_t *prev = parser->current_context->prev;
-        free(parser->current_context);
+        yp_free(&parser->allocator, parser->current_context);
         parser->current_context = prev;
     }
 }
@@ -4976,7 +4977,7 @@ lex_optional_float_suffix(yp_parser_t *parser) {
             parser->current.end += yp_strspn_decimal_number(parser->current.end, parser->end - parser->current.end);
             type = YP_TOKEN_FLOAT;
         } else {
-            yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Missing exponent.");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Missing exponent.");
             type = YP_TOKEN_FLOAT;
         }
     }
@@ -4996,7 +4997,7 @@ lex_numeric_prefix(yp_parser_t *parser) {
                 if (yp_char_is_decimal_digit(*++parser->current.end)) {
                     parser->current.end += yp_strspn_decimal_number(parser->current.end, parser->end - parser->current.end);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid decimal number.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid decimal number.");
                 }
 
                 break;
@@ -5007,7 +5008,7 @@ lex_numeric_prefix(yp_parser_t *parser) {
                 if (yp_char_is_binary_digit(*++parser->current.end)) {
                     parser->current.end += yp_strspn_binary_number(parser->current.end, parser->end - parser->current.end);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid binary number.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid binary number.");
                 }
 
                 break;
@@ -5018,7 +5019,7 @@ lex_numeric_prefix(yp_parser_t *parser) {
                 if (yp_char_is_octal_digit(*++parser->current.end)) {
                     parser->current.end += yp_strspn_octal_number(parser->current.end, parser->end - parser->current.end);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid octal number.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid octal number.");
                 }
 
                 break;
@@ -5042,7 +5043,7 @@ lex_numeric_prefix(yp_parser_t *parser) {
                 if (yp_char_is_hexadecimal_digit(*++parser->current.end)) {
                     parser->current.end += yp_strspn_hexadecimal_number(parser->current.end, parser->end - parser->current.end);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid hexadecimal number.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid hexadecimal number.");
                 }
 
                 break;
@@ -5072,7 +5073,7 @@ lex_numeric_prefix(yp_parser_t *parser) {
     // If the last character that we consumed was an underscore, then this is
     // actually an invalid integer value, and we should return an invalid token.
     if (peek_offset(parser, -1) == '_') {
-        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Number literal cannot end with a `_`.");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Number literal cannot end with a `_`.");
     }
 
     return type;
@@ -5160,7 +5161,7 @@ lex_global_variable(yp_parser_t *parser) {
                 } while (parser->current.end < parser->end && (width = char_is_identifier(parser, parser->current.end)) > 0);
 
                 // $0 isn't allowed to be followed by anything.
-                yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid global variable.");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid global variable.");
             }
 
             return YP_TOKEN_GLOBAL_VARIABLE;
@@ -5191,7 +5192,7 @@ lex_global_variable(yp_parser_t *parser) {
             } else {
                 // If we get here, then we have a $ followed by something that isn't
                 // recognized as a global variable.
-                yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid global variable.");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid global variable.");
             }
 
             return YP_TOKEN_GLOBAL_VARIABLE;
@@ -5531,7 +5532,7 @@ lex_question_mark(yp_parser_t *parser) {
     }
 
     if (parser->current.end >= parser->end) {
-        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Incomplete character syntax.");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Incomplete character syntax.");
         return YP_TOKEN_CHARACTER_LITERAL;
     }
 
@@ -5582,9 +5583,9 @@ lex_at_variable(yp_parser_t *parser) {
             parser->current.end += width;
         }
     } else if (type == YP_TOKEN_CLASS_VARIABLE) {
-        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Incomplete class variable.");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Incomplete class variable.");
     } else {
-        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Incomplete instance variable.");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Incomplete instance variable.");
     }
 
     // If we're lexing an embedded variable, then we need to pop back into the
@@ -5607,7 +5608,7 @@ parser_lex_callback(yp_parser_t *parser) {
 // Return a new comment node of the specified type.
 static inline yp_comment_t *
 parser_comment(yp_parser_t *parser, yp_comment_type_t type) {
-    yp_comment_t *comment = (yp_comment_t *) malloc(sizeof(yp_comment_t));
+    yp_comment_t *comment = (yp_comment_t *) yp_malloc(&parser->allocator, sizeof(yp_comment_t));
     if (comment == NULL) return NULL;
 
     *comment = (yp_comment_t) {
@@ -5683,7 +5684,7 @@ lex_embdoc(yp_parser_t *parser) {
         parser_lex_callback(parser);
     }
 
-    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unterminated embdoc");
+    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unterminated embdoc");
 
     comment->end = parser->current.end;
     yp_list_append(&parser->comment_list, (yp_list_node_t *) comment);
@@ -6113,7 +6114,7 @@ parser_lex(yp_parser_t *parser) {
                     yp_token_type_t type = YP_TOKEN_STAR;
 
                     if (lex_state_spcarg_p(parser, space_seen)) {
-                        yp_diagnostic_list_append(&parser->warning_list, parser->current.start, parser->current.end, "`*' interpreted as argument prefix");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->warning_list, parser->current.start, parser->current.end, "`*' interpreted as argument prefix");
                         type = YP_TOKEN_USTAR;
                     } else if (lex_state_beg_p(parser)) {
                         type = YP_TOKEN_USTAR;
@@ -6257,7 +6258,7 @@ parser_lex(yp_parser_t *parser) {
                                         // this is not a valid heredoc declaration. In this case we
                                         // will add an error, but we will still return a heredoc
                                         // start.
-                                        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unterminated heredoc.");
+                                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unterminated heredoc.");
                                         body_start = parser->end;
                                     } else {
                                         // Otherwise, we want to indicate that the body of the
@@ -6451,6 +6452,7 @@ parser_lex(yp_parser_t *parser) {
                     bool spcarg = lex_state_spcarg_p(parser, space_seen);
                     if (spcarg) {
                         yp_diagnostic_list_append(
+                            &parser->allocator,
                             &parser->warning_list,
                             parser->current.start,
                             parser->current.end,
@@ -6500,6 +6502,7 @@ parser_lex(yp_parser_t *parser) {
                     bool spcarg = lex_state_spcarg_p(parser, space_seen);
                     if (spcarg) {
                         yp_diagnostic_list_append(
+                            &parser->allocator,
                             &parser->warning_list,
                             parser->current.start,
                             parser->current.end,
@@ -6601,7 +6604,7 @@ parser_lex(yp_parser_t *parser) {
                     }
 
                     if (lex_state_spcarg_p(parser, space_seen)) {
-                        yp_diagnostic_list_append(&parser->warning_list, parser->current.start, parser->current.end, "ambiguity between regexp and two divisions: wrap regexp in parentheses or add a space after `/' operator");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->warning_list, parser->current.start, parser->current.end, "ambiguity between regexp and two divisions: wrap regexp in parentheses or add a space after `/' operator");
                         lex_mode_push_regexp(parser, '\0', '/');
                         LEX(YP_TOKEN_REGEXP_BEGIN);
                     }
@@ -6640,7 +6643,7 @@ parser_lex(yp_parser_t *parser) {
                     // going to say it's the percent operator because we don't want to move into the
                     // string lex mode unnecessarily.
                     if ((lex_state_beg_p(parser) || lex_state_arg_p(parser)) && (parser->current.end >= parser->end)) {
-                        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unexpected end of input");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unexpected end of input");
                         LEX(YP_TOKEN_PERCENT);
                     }
 
@@ -6765,7 +6768,7 @@ parser_lex(yp_parser_t *parser) {
                                 // unparseable. In this case we'll just drop it from the parser
                                 // and skip past it and hope that the next token is something
                                 // that we can parse.
-                                yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid %% token");
+                                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid %% token");
                                 goto lex_next_token;
                         }
                     }
@@ -6801,7 +6804,7 @@ parser_lex(yp_parser_t *parser) {
                         // token as we've exhausted all of the other options. We'll skip past
                         // it and return the next token.
                         if (!width) {
-                            yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid token.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid token.");
                             goto lex_next_token;
                         }
 
@@ -7719,7 +7722,7 @@ static void
 expect(yp_parser_t *parser, yp_token_type_t type, const char *message) {
     if (accept(parser, type)) return;
 
-    yp_diagnostic_list_append(&parser->error_list, parser->previous.end, parser->previous.end, message);
+    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.end, parser->previous.end, message);
 
     parser->previous =
         (yp_token_t) { .type = YP_TOKEN_MISSING, .start = parser->previous.end, .end = parser->previous.end };
@@ -7739,7 +7742,7 @@ expect_any(yp_parser_t *parser, const char*message, size_t count, ...) {
 
     va_end(types);
 
-    yp_diagnostic_list_append(&parser->error_list, parser->previous.end, parser->previous.end, message);
+    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.end, parser->previous.end, message);
     parser->previous =
         (yp_token_t) { .type = YP_TOKEN_MISSING, .start = parser->previous.end, .end = parser->previous.end };
 }
@@ -7855,7 +7858,7 @@ parse_target(yp_parser_t *parser, yp_node_t *target) {
             /* fallthrough */
         case YP_NODE_NUMBERED_REFERENCE_READ_NODE:
             assert(sizeof(yp_global_variable_target_node_t) == sizeof(yp_numbered_reference_read_node_t));
-            yp_diagnostic_list_append(&parser->error_list, target->location.start, target->location.end, "Can't set variable");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, target->location.start, target->location.end, "Can't set variable");
             /* fallthrough */
         case YP_NODE_GLOBAL_VARIABLE_READ_NODE:
             assert(sizeof(yp_global_variable_target_node_t) == sizeof(yp_global_variable_read_node_t));
@@ -7918,7 +7921,7 @@ parse_target(yp_parser_t *parser, yp_node_t *target) {
                     target->type = YP_NODE_LOCAL_VARIABLE_TARGET_NODE;
 
                     if (token_is_numbered_parameter(message.start, message.end)) {
-                        yp_diagnostic_list_append(&parser->error_list, message.start, message.end, "reserved for numbered parameter");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, message.start, message.end, "reserved for numbered parameter");
                     }
 
                     return target;
@@ -7961,7 +7964,7 @@ parse_target(yp_parser_t *parser, yp_node_t *target) {
             // In this case we have a node that we don't know how to convert
             // into a target. We need to treat it as an error. For now, we'll
             // mark it as an error and just skip right past it.
-            yp_diagnostic_list_append(&parser->error_list, target->location.start, target->location.end, "Unexpected write target.");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, target->location.start, target->location.end, "Unexpected write target.");
             return target;
     }
 }
@@ -7987,7 +7990,7 @@ parse_write(yp_parser_t *parser, yp_node_t *target, yp_token_t *operator, yp_nod
         }
         case YP_NODE_BACK_REFERENCE_READ_NODE:
         case YP_NODE_NUMBERED_REFERENCE_READ_NODE:
-            yp_diagnostic_list_append(&parser->error_list, target->location.start, target->location.end, "Can't set variable");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, target->location.start, target->location.end, "Can't set variable");
             /* fallthrough */
         case YP_NODE_GLOBAL_VARIABLE_READ_NODE: {
             yp_global_variable_write_node_t *result = yp_global_variable_write_node_create(parser, &target->location, operator, value);
@@ -8060,7 +8063,7 @@ parse_write(yp_parser_t *parser, yp_node_t *target, yp_token_t *operator, yp_nod
                     target = (yp_node_t *) yp_local_variable_write_node_create(parser, constant_id, 0, value, &message, operator);
 
                     if (token_is_numbered_parameter(message.start, message.end)) {
-                        yp_diagnostic_list_append(&parser->error_list, message.start, message.end, "reserved for numbered parameter");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, message.start, message.end, "reserved for numbered parameter");
                     }
 
                     return target;
@@ -8132,7 +8135,7 @@ parse_write(yp_parser_t *parser, yp_node_t *target, yp_token_t *operator, yp_nod
             // In this case we have a node that we don't know how to convert into a
             // target. We need to treat it as an error. For now, we'll mark it as an
             // error and just skip right past it.
-            yp_diagnostic_list_append(&parser->error_list, operator->start, operator->end, "Unexpected `='.");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator->start, operator->end, "Unexpected `='.");
             return target;
     }
 }
@@ -8177,7 +8180,7 @@ parse_targets(yp_parser_t *parser, yp_node_t *first_target, yp_binding_power_t b
                 // others yet.
 
                 if (has_splat) {
-                    yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Multiple splats in multi-assignment.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Multiple splats in multi-assignment.");
                 }
 
                 yp_token_t star_operator = parser->previous;
@@ -8243,7 +8246,7 @@ parse_targets(yp_parser_t *parser, yp_node_t *first_target, yp_binding_power_t b
                         // If we get here, then we weren't able to parse anything at all, so
                         // we need to return a missing node.
                         yp_node_destroy(parser, (yp_node_t *) result);
-                        yp_diagnostic_list_append(&parser->error_list, operator.start, operator.end, "Expected index after for.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, operator.end, "Expected index after for.");
                         return (yp_node_t *) yp_missing_node_create(parser, operator.start, operator.end);
                     }
 
@@ -8353,7 +8356,7 @@ parse_assocs(yp_parser_t *parser, yp_node_t *node) {
                 if (token_begins_expression_p(parser->current.type)) {
                     value = parse_expression(parser, YP_BINDING_POWER_DEFINED, "Expected an expression after ** in hash.");
                 } else if (yp_parser_local_depth(parser, &operator) == -1) {
-                    yp_diagnostic_list_append(&parser->error_list, operator.start, operator.end, "Expected an expression after ** in hash.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, operator.end, "Expected an expression after ** in hash.");
                 }
 
                 element = (yp_node_t *) yp_assoc_splat_node_create(parser, value, &operator);
@@ -8432,7 +8435,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
 
     while (!match_type_p(parser, YP_TOKEN_EOF)) {
         if (parsed_block_argument) {
-            yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unexpected argument after block argument.");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unexpected argument after block argument.");
         }
 
         yp_node_t *argument = NULL;
@@ -8441,7 +8444,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
             case YP_TOKEN_USTAR_STAR:
             case YP_TOKEN_LABEL: {
                 if (parsed_bare_hash) {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unexpected bare hash.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unexpected bare hash.");
                 }
 
                 yp_keyword_hash_node_t *hash = yp_keyword_hash_node_create(parser);
@@ -8462,7 +8465,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
                 if (token_begins_expression_p(parser->current.type)) {
                     expression = parse_expression(parser, YP_BINDING_POWER_DEFINED, "Expected to be able to parse an argument.");
                 } else if (yp_parser_local_depth(parser, &operator) == -1) {
-                    yp_diagnostic_list_append(&parser->error_list, operator.start, operator.end, "unexpected & when parent method is not forwarding.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, operator.end, "unexpected & when parent method is not forwarding.");
                 }
 
                 argument = (yp_node_t *)yp_block_argument_node_create(parser, &operator, expression);
@@ -8476,7 +8479,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
 
                 if (match_any_type_p(parser, 2, YP_TOKEN_PARENTHESIS_RIGHT, YP_TOKEN_COMMA)) {
                     if (yp_parser_local_depth(parser, &parser->previous) == -1) {
-                        yp_diagnostic_list_append(&parser->error_list, operator.start, operator.end, "unexpected * when parent method is not forwarding.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, operator.end, "unexpected * when parent method is not forwarding.");
                     }
 
                     argument = (yp_node_t *) yp_splat_node_create(parser, &operator, NULL);
@@ -8484,7 +8487,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
                     yp_node_t *expression = parse_expression(parser, YP_BINDING_POWER_DEFINED, "Expected an expression after '*' in argument.");
 
                     if (parsed_bare_hash) {
-                        yp_diagnostic_list_append(&parser->error_list, operator.start, expression->location.end, "Unexpected splat argument after double splat.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, expression->location.end, "Unexpected splat argument after double splat.");
                     }
 
                     argument = (yp_node_t *) yp_splat_node_create(parser, &operator, expression);
@@ -8504,7 +8507,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
                         argument = (yp_node_t *) yp_range_node_create(parser, NULL, &operator, right);
                     } else {
                         if (yp_parser_local_depth(parser, &parser->previous) == -1) {
-                            yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "unexpected ... when parent method is not forwarding.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "unexpected ... when parent method is not forwarding.");
                         }
 
                         argument = (yp_node_t *)yp_forwarding_arguments_node_create(parser, &parser->previous);
@@ -8520,7 +8523,7 @@ parse_arguments(yp_parser_t *parser, yp_arguments_t *arguments, bool accepts_for
 
                 if (yp_symbol_node_label_p(argument) || accept(parser, YP_TOKEN_EQUAL_GREATER)) {
                     if (parsed_bare_hash) {
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected bare hash argument.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected bare hash argument.");
                     }
 
                     yp_token_t operator;
@@ -8600,7 +8603,7 @@ parse_required_destructured_parameter(yp_parser_t *parser) {
 
         if (node->parameters.size > 0 && match_type_p(parser, YP_TOKEN_PARENTHESIS_RIGHT)) {
             if (parsed_splat) {
-                yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected splat after splat.");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected splat after splat.");
             }
 
             param = (yp_node_t *) yp_splat_node_create(parser, &parser->previous, NULL);
@@ -8612,7 +8615,7 @@ parse_required_destructured_parameter(yp_parser_t *parser) {
             param = (yp_node_t *) parse_required_destructured_parameter(parser);
         } else if (accept(parser, YP_TOKEN_USTAR)) {
             if (parsed_splat) {
-                yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected splat after splat.");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected splat after splat.");
             }
 
             yp_token_t star = parser->previous;
@@ -8692,12 +8695,12 @@ update_parameter_state(yp_parser_t *parser, yp_token_t *token, yp_parameters_ord
     }
 
     if (token->type == YP_TOKEN_USTAR && *current == YP_PARAMETERS_ORDER_AFTER_OPTIONAL) {
-        yp_diagnostic_list_append(&parser->error_list, token->start, token->end, "Unexpected parameter *");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token->start, token->end, "Unexpected parameter *");
     }
 
     if (*current == YP_PARAMETERS_ORDER_NOTHING_AFTER || state > *current) {
         // We know what transition we failed on, so we can provide a better error here.
-        yp_diagnostic_list_append(&parser->error_list, token->start, token->end, "Unexpected parameter order");
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token->start, token->end, "Unexpected parameter order");
     } else if (state < *current) {
         *current = state;
     }
@@ -8752,7 +8755,7 @@ parse_parameters(
                 if (params->block == NULL) {
                     yp_parameters_node_block_set(params, param);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, param->base.location.start, param->base.location.end, "Unexpected multiple block parameter");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, param->base.location.start, param->base.location.end, "Unexpected multiple block parameter");
                     yp_parameters_node_posts_append(params, (yp_node_t *) param);
                 }
 
@@ -8760,7 +8763,7 @@ parse_parameters(
             }
             case YP_TOKEN_UDOT_DOT_DOT: {
                 if (!allows_forwarding_parameter) {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unexpected ...");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unexpected ...");
                 }
                 if (order > YP_PARAMETERS_ORDER_NOTHING_AFTER) {
                     update_parameter_state(parser, &parser->current, &order);
@@ -8783,16 +8786,16 @@ parse_parameters(
                 parser_lex(parser);
                 switch (parser->previous.type) {
                     case YP_TOKEN_CONSTANT:
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be a constant");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be a constant");
                         break;
                     case YP_TOKEN_INSTANCE_VARIABLE:
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be an instance variable");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be an instance variable");
                         break;
                     case YP_TOKEN_GLOBAL_VARIABLE:
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be a global variable");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be a global variable");
                         break;
                     case YP_TOKEN_CLASS_VARIABLE:
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be a class variable");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Formal argument cannot be a class variable");
                         break;
                     default: break;
                 }
@@ -8909,7 +8912,7 @@ parse_parameters(
                 if (params->rest == NULL) {
                     yp_parameters_node_rest_set(params, param);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, param->base.location.start, param->base.location.end, "Unexpected multiple splat parameters.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, param->base.location.start, param->base.location.end, "Unexpected multiple splat parameters.");
                     yp_parameters_node_posts_append(params, (yp_node_t *) param);
                 }
 
@@ -8943,7 +8946,7 @@ parse_parameters(
                 if (params->keyword_rest == NULL) {
                     yp_parameters_node_keyword_rest_set(params, param);
                 } else {
-                    yp_diagnostic_list_append(&parser->error_list, param->location.start, param->location.end, "Unexpected multiple double splat parameters.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, param->location.start, param->location.end, "Unexpected multiple double splat parameters.");
                     yp_parameters_node_posts_append(params, param);
                 }
 
@@ -8961,11 +8964,11 @@ parse_parameters(
                         if (params->rest == NULL) {
                             yp_parameters_node_rest_set(params, param);
                         } else {
-                            yp_diagnostic_list_append(&parser->error_list, param->base.location.start, param->base.location.end, "Unexpected multiple splat parameters.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, param->base.location.start, param->base.location.end, "Unexpected multiple splat parameters.");
                             yp_parameters_node_posts_append(params, (yp_node_t *) param);
                         }
                     } else {
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected ','.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected ','.");
                     }
                 }
 
@@ -9582,7 +9585,7 @@ parse_string_part(yp_parser_t *parser) {
         }
         default:
             parser_lex(parser);
-            yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Could not understand string part");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Could not understand string part");
             return NULL;
     }
 }
@@ -9700,7 +9703,7 @@ parse_undef_argument(yp_parser_t *parser) {
             return parse_symbol(parser, &lex_mode, YP_LEX_STATE_NONE);
         }
         default:
-            yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Expected a bare word or symbol argument.");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Expected a bare word or symbol argument.");
             return (yp_node_t *) yp_missing_node_create(parser, parser->current.start, parser->current.end);
     }
 }
@@ -9742,7 +9745,7 @@ parse_alias_argument(yp_parser_t *parser, bool first) {
             parser_lex(parser);
             return (yp_node_t *) yp_global_variable_read_node_create(parser, &parser->previous);
         default:
-            yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Expected a bare word, symbol or global variable argument.");
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Expected a bare word, symbol or global variable argument.");
             return (yp_node_t *) yp_missing_node_create(parser, parser->current.start, parser->current.end);
     }
 }
@@ -9885,7 +9888,7 @@ parse_heredoc_dedent(yp_parser_t *parser, yp_node_t *node, yp_heredoc_quote_t qu
         // Get a reference to the string struct that is being held by the string
         // node. This is the value we're going to actual manipulate.
         yp_string_t *string = &(((yp_string_node_t *) node)->unescaped);
-        yp_string_ensure_owned(string);
+        yp_string_ensure_owned(&parser->allocator, string);
 
         // Now get the bounds of the existing string. We'll use this as a
         // destination to move bytes into. We'll also use it for bounds checking
@@ -10178,7 +10181,7 @@ parse_pattern_hash(yp_parser_t *parser, yp_node_t *first_assoc) {
     }
 
     yp_hash_pattern_node_t *node = yp_hash_pattern_node_node_list_create(parser, &assocs);
-    free(assocs.nodes);
+    yp_free(&parser->allocator, assocs.nodes);
 
     return node;
 }
@@ -10274,13 +10277,13 @@ parse_pattern_primitive(yp_parser_t *parser, const char *message) {
                     case YP_TOKEN_STRING_BEGIN:
                         key = parse_expression(parser, YP_BINDING_POWER_MAX, "Expected a key in the hash pattern.");
                         if (!yp_symbol_node_label_p(key)) {
-                            yp_diagnostic_list_append(&parser->error_list, key->location.start, key->location.end, "Expected a label as the key in the hash pattern.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, key->location.start, key->location.end, "Expected a label as the key in the hash pattern.");
                         }
 
                         break;
                     default:
                         parser_lex(parser);
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Expected a key in the hash pattern.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Expected a key in the hash pattern.");
                         key = (yp_node_t *) yp_missing_node_create(parser, parser->previous.start, parser->previous.end);
                         break;
                 }
@@ -10315,7 +10318,7 @@ parse_pattern_primitive(yp_parser_t *parser, const char *message) {
                     return (yp_node_t *) yp_range_node_create(parser, NULL, &operator, right);
                 }
                 default: {
-                    yp_diagnostic_list_append(&parser->error_list, operator.start, operator.end, "Expected an expression after the range operator.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, operator.end, "Expected an expression after the range operator.");
                     yp_node_t *right = (yp_node_t *) yp_missing_node_create(parser, operator.start, operator.end);
                     return (yp_node_t *) yp_range_node_create(parser, NULL, &operator, right);
                 }
@@ -10403,7 +10406,7 @@ parse_pattern_primitive(yp_parser_t *parser, const char *message) {
                 default: {
                     // If we get here, then we have a pin operator followed by something
                     // not understood. We'll create a missing node and return that.
-                    yp_diagnostic_list_append(&parser->error_list, operator.start, operator.end, "Expected a variable after the pin operator.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, operator.start, operator.end, "Expected a variable after the pin operator.");
                     yp_node_t *variable = (yp_node_t *) yp_missing_node_create(parser, operator.start, operator.end);
                     return (yp_node_t *) yp_pinned_variable_node_create(parser, &operator, variable);
                 }
@@ -10427,7 +10430,7 @@ parse_pattern_primitive(yp_parser_t *parser, const char *message) {
             return parse_pattern_constant_path(parser, node);
         }
         default:
-            yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, message);
+            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, message);
             return (yp_node_t *) yp_missing_node_create(parser, parser->current.start, parser->current.end);
     }
 }
@@ -10471,7 +10474,7 @@ parse_pattern_primitives(yp_parser_t *parser, const char *message) {
                 break;
             }
             default: {
-                yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, message);
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, message);
                 yp_node_t *right = (yp_node_t *) yp_missing_node_create(parser, parser->current.start, parser->current.end);
 
                 if (node == NULL) {
@@ -10563,7 +10566,7 @@ parse_pattern(yp_parser_t *parser, bool top_pattern, const char *message) {
                 // will continue to parse the rest of the patterns, but we will indicate
                 // it as an error.
                 if (trailing_rest) {
-                    yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected rest pattern.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected rest pattern.");
                 }
 
                 trailing_rest = true;
@@ -10584,7 +10587,7 @@ parse_pattern(yp_parser_t *parser, bool top_pattern, const char *message) {
             node = (yp_node_t *) yp_array_pattern_node_node_list_create(parser, &nodes);
         }
 
-        free(nodes.nodes);
+        yp_free(&parser->allocator, nodes.nodes);
     } else if (leading_rest) {
         // Otherwise, if we parsed a single splat pattern, then we know we have an
         // array pattern, so we can go ahead and create that node.
@@ -10652,7 +10655,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                     element = (yp_node_t *) yp_splat_node_create(parser, &operator, expression);
                 } else if (match_any_type_p(parser, 2, YP_TOKEN_LABEL, YP_TOKEN_USTAR_STAR)) {
                     if (parsed_bare_hash) {
-                        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Unexpected bare hash.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Unexpected bare hash.");
                     }
 
                     yp_keyword_hash_node_t *hash = yp_keyword_hash_node_create(parser);
@@ -10668,7 +10671,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
 
                     if (yp_symbol_node_label_p(element) || accept(parser, YP_TOKEN_EQUAL_GREATER)) {
                         if (parsed_bare_hash) {
-                            yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected bare hash.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected bare hash.");
                         }
 
                         yp_keyword_hash_node_t *hash = yp_keyword_hash_node_create(parser);
@@ -11088,7 +11091,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                 case YP_NODE_SYMBOL_NODE:
                 case YP_NODE_INTERPOLATED_SYMBOL_NODE: {
                     if (!YP_NODE_TYPE_P(old_name, YP_NODE_SYMBOL_NODE) && !YP_NODE_TYPE_P(old_name, YP_NODE_INTERPOLATED_SYMBOL_NODE)) {
-                        yp_diagnostic_list_append(&parser->error_list, old_name->location.start, old_name->location.end, "Expected a bare word or symbol argument.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, old_name->location.start, old_name->location.end, "Expected a bare word or symbol argument.");
                     }
                     break;
                 }
@@ -11097,10 +11100,10 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                 case YP_NODE_GLOBAL_VARIABLE_READ_NODE: {
                     if (YP_NODE_TYPE_P(old_name, YP_NODE_BACK_REFERENCE_READ_NODE) || YP_NODE_TYPE_P(old_name, YP_NODE_NUMBERED_REFERENCE_READ_NODE) || YP_NODE_TYPE_P(old_name, YP_NODE_GLOBAL_VARIABLE_READ_NODE)) {
                         if (YP_NODE_TYPE_P(old_name, YP_NODE_NUMBERED_REFERENCE_READ_NODE)) {
-                            yp_diagnostic_list_append(&parser->error_list, old_name->location.start, old_name->location.end, "Can't make alias for number variables.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, old_name->location.start, old_name->location.end, "Can't make alias for number variables.");
                         }
                     } else {
-                        yp_diagnostic_list_append(&parser->error_list, old_name->location.start, old_name->location.end, "Expected a global variable.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, old_name->location.start, old_name->location.end, "Expected a global variable.");
                     }
                     break;
                 }
@@ -11236,7 +11239,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
             accept_any(parser, 2, YP_TOKEN_NEWLINE, YP_TOKEN_SEMICOLON);
             if (accept(parser, YP_TOKEN_KEYWORD_ELSE)) {
                 if (case_node->conditions.size < 1) {
-                    yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected else without no when clauses in case statement.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected else without no when clauses in case statement.");
                 }
 
                 yp_token_t else_keyword = parser->previous;
@@ -11278,6 +11281,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
 
             if ((begin_node->else_clause != NULL) && (begin_node->rescue_clause == NULL)) {
                 yp_diagnostic_list_append(
+                    &parser->allocator, 
                     &parser->error_list,
                     begin_node->else_clause->base.location.start,
                     begin_node->else_clause->base.location.end,
@@ -11328,7 +11332,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                         (parser->current_context->context == YP_CONTEXT_CLASS) ||
                         (parser->current_context->context == YP_CONTEXT_MODULE)
                     ) {
-                        yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Invalid return in class/module body");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Invalid return in class/module body");
                     }
                     return (yp_node_t *) yp_return_node_create(parser, &keyword, arguments.arguments);
                 }
@@ -11392,7 +11396,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
             yp_node_t *constant_path = parse_expression(parser, YP_BINDING_POWER_INDEX, "Expected to find a class name after `class`.");
             yp_token_t name = parser->previous;
             if (name.type != YP_TOKEN_CONSTANT) {
-                yp_diagnostic_list_append(&parser->error_list, name.start, name.end, "Expected a constant name after `class`.");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, name.start, name.end, "Expected a constant name after `class`.");
             }
 
             yp_token_t inheritance_operator;
@@ -11429,7 +11433,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
             expect(parser, YP_TOKEN_KEYWORD_END, "Expected `end` to close `class` statement.");
 
             if (context_def_p(parser)) {
-                yp_diagnostic_list_append(&parser->error_list, class_keyword.start, class_keyword.end, "Class definition in method body");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, class_keyword.start, class_keyword.end, "Class definition in method body");
             }
 
             yp_constant_id_list_t locals = parser->current_scope->locals;
@@ -11468,7 +11472,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                         name = parse_method_definition_name(parser);
 
                         if (name.type == YP_TOKEN_MISSING) {
-                            yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Expected a method name after receiver.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Expected a method name after receiver.");
                         }
                     } else {
                         name = parser->previous;
@@ -11536,7 +11540,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
 
                         name = parse_method_definition_name(parser);
                         if (name.type == YP_TOKEN_MISSING) {
-                            yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Expected a method name after receiver.");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Expected a method name after receiver.");
                         }
                     } else {
                         name = identifier;
@@ -11566,7 +11570,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                     name = parse_method_definition_name(parser);
 
                     if (name.type == YP_TOKEN_MISSING) {
-                        yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Expected a method name after receiver.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Expected a method name after receiver.");
                     }
                     break;
             }
@@ -11620,7 +11624,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
 
             if (accept(parser, YP_TOKEN_EQUAL)) {
                 if (token_is_setter_name(&name)) {
-                    yp_diagnostic_list_append(&parser->error_list, name.start, name.end, "Setter method cannot be defined in an endless method definition");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, name.start, name.end, "Setter method cannot be defined in an endless method definition");
                 }
                 equal = parser->previous;
 
@@ -11853,7 +11857,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
             // syntax error. We handle that here as well.
             name = parser->previous;
             if (name.type != YP_TOKEN_CONSTANT) {
-                yp_diagnostic_list_append(&parser->error_list, name.start, name.end, "Expected to find a module name after `module`.");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, name.start, name.end, "Expected to find a module name after `module`.");
             }
 
             yp_parser_scope_push(parser, true);
@@ -11877,7 +11881,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
             expect(parser, YP_TOKEN_KEYWORD_END, "Expected `end` to close `module` statement.");
 
             if (context_def_p(parser)) {
-                yp_diagnostic_list_append(&parser->error_list, module_keyword.start, module_keyword.end, "Module definition in method body");
+                yp_diagnostic_list_append(&parser->allocator, &parser->error_list, module_keyword.start, module_keyword.end, "Module definition in method body");
             }
 
             return (yp_node_t *) yp_module_node_create(parser, &locals, &module_keyword, constant_path, &name, statements, &parser->previous);
@@ -12676,7 +12680,7 @@ parse_expression_prefix(yp_parser_t *parser, yp_binding_power_t binding_power) {
                     // parsed. If it cannot be concatenated with the previous
                     // node, then we'll need to add a syntax error.
                     if (!YP_NODE_TYPE_P(node, YP_NODE_STRING_NODE) && !YP_NODE_TYPE_P(node, YP_NODE_INTERPOLATED_STRING_NODE)) {
-                        yp_diagnostic_list_append(&parser->error_list, node->location.start, node->location.end, "Unexpected string concatenation.");
+                        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, node->location.start, node->location.end, "Unexpected string concatenation.");
                     }
 
                     // Either way we will create a concat node to hold the
@@ -12765,7 +12769,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     // In this case we have an = sign, but we don't know what it's for. We
                     // need to treat it as an error. For now, we'll mark it as an error
                     // and just skip right past it.
-                    yp_diagnostic_list_append(&parser->error_list, token.start, token.end, "Unexpected `='.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token.start, token.end, "Unexpected `='.");
                     return node;
             }
         }
@@ -12773,7 +12777,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
             switch (YP_NODE_TYPE(node)) {
                 case YP_NODE_BACK_REFERENCE_READ_NODE:
                 case YP_NODE_NUMBERED_REFERENCE_READ_NODE:
-                    yp_diagnostic_list_append(&parser->error_list, node->location.start, node->location.end, "Can't set variable");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, node->location.start, node->location.end, "Can't set variable");
                 /* fallthrough */
                 case YP_NODE_GLOBAL_VARIABLE_READ_NODE: {
                     parser_lex(parser);
@@ -12838,7 +12842,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                         yp_constant_id_t constant_id = yp_parser_local_add_location(parser, message_loc.start, message_loc.end);
 
                         if (token_is_numbered_parameter(message_loc.start, message_loc.end)) {
-                            yp_diagnostic_list_append(&parser->error_list, message_loc.start, message_loc.end, "reserved for numbered parameter");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, message_loc.start, message_loc.end, "reserved for numbered parameter");
                         }
 
                         parser_lex(parser);
@@ -12857,7 +12861,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                 }
                 case YP_NODE_MULTI_WRITE_NODE: {
                     parser_lex(parser);
-                    yp_diagnostic_list_append(&parser->error_list, token.start, token.end, "Cannot use `&&=' on a multi-write.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token.start, token.end, "Cannot use `&&=' on a multi-write.");
                     return node;
                 }
                 default:
@@ -12866,7 +12870,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     // In this case we have an &&= sign, but we don't know what it's for.
                     // We need to treat it as an error. For now, we'll mark it as an error
                     // and just skip right past it.
-                    yp_diagnostic_list_append(&parser->error_list, token.start, token.end, "Unexpected `&&='.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token.start, token.end, "Unexpected `&&='.");
                     return node;
             }
         }
@@ -12874,7 +12878,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
             switch (YP_NODE_TYPE(node)) {
                 case YP_NODE_BACK_REFERENCE_READ_NODE:
                 case YP_NODE_NUMBERED_REFERENCE_READ_NODE:
-                    yp_diagnostic_list_append(&parser->error_list, node->location.start, node->location.end, "Can't set variable");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, node->location.start, node->location.end, "Can't set variable");
                 /* fallthrough */
                 case YP_NODE_GLOBAL_VARIABLE_READ_NODE: {
                     parser_lex(parser);
@@ -12939,7 +12943,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                         yp_constant_id_t constant_id = yp_parser_local_add_location(parser, message_loc.start, message_loc.end);
 
                         if (token_is_numbered_parameter(message_loc.start, message_loc.end)) {
-                            yp_diagnostic_list_append(&parser->error_list, message_loc.start, message_loc.end, "reserved for numbered parameter");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, message_loc.start, message_loc.end, "reserved for numbered parameter");
                         }
 
                         parser_lex(parser);
@@ -12958,7 +12962,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                 }
                 case YP_NODE_MULTI_WRITE_NODE: {
                     parser_lex(parser);
-                    yp_diagnostic_list_append(&parser->error_list, token.start, token.end, "Cannot use `||=' on a multi-write.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token.start, token.end, "Cannot use `||=' on a multi-write.");
                     return node;
                 }
                 default:
@@ -12967,7 +12971,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     // In this case we have an ||= sign, but we don't know what it's for.
                     // We need to treat it as an error. For now, we'll mark it as an error
                     // and just skip right past it.
-                    yp_diagnostic_list_append(&parser->error_list, token.start, token.end, "Unexpected `||='.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token.start, token.end, "Unexpected `||='.");
                     return node;
             }
         }
@@ -12985,7 +12989,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
             switch (YP_NODE_TYPE(node)) {
                 case YP_NODE_BACK_REFERENCE_READ_NODE:
                 case YP_NODE_NUMBERED_REFERENCE_READ_NODE:
-                    yp_diagnostic_list_append(&parser->error_list, node->location.start, node->location.end, "Can't set variable");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, node->location.start, node->location.end, "Can't set variable");
                 /* fallthrough */
                 case YP_NODE_GLOBAL_VARIABLE_READ_NODE: {
                     parser_lex(parser);
@@ -13050,7 +13054,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                         yp_constant_id_t constant_id = yp_parser_local_add_location(parser, message_loc.start, message_loc.end);
 
                         if (token_is_numbered_parameter(message_loc.start, message_loc.end)) {
-                            yp_diagnostic_list_append(&parser->error_list, message_loc.start, message_loc.end, "reserved for numbered parameter");
+                            yp_diagnostic_list_append(&parser->allocator, &parser->error_list, message_loc.start, message_loc.end, "reserved for numbered parameter");
                         }
 
                         parser_lex(parser);
@@ -13069,7 +13073,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                 }
                 case YP_NODE_MULTI_WRITE_NODE: {
                     parser_lex(parser);
-                    yp_diagnostic_list_append(&parser->error_list, token.start, token.end, "Unexpected operator.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, token.start, token.end, "Unexpected operator.");
                     return node;
                 }
                 default:
@@ -13078,7 +13082,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     // In this case we have an operator but we don't know what it's for.
                     // We need to treat it as an error. For now, we'll mark it as an error
                     // and just skip right past it.
-                    yp_diagnostic_list_append(&parser->error_list, parser->previous.start, parser->previous.end, "Unexpected operator.");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->previous.start, parser->previous.end, "Unexpected operator.");
                     return node;
             }
         }
@@ -13182,7 +13186,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     break;
                 }
                 default: {
-                    yp_diagnostic_list_append(&parser->error_list, parser->current.start, parser->current.end, "Expected a valid method name");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, parser->current.start, parser->current.end, "Expected a valid method name");
                     message = (yp_token_t) { .type = YP_TOKEN_MISSING, .start = parser->previous.end, .end = parser->previous.end };
                 }
             }
@@ -13332,7 +13336,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     return (yp_node_t *) yp_call_node_shorthand_create(parser, node, &delimiter, &arguments);
                 }
                 default: {
-                    yp_diagnostic_list_append(&parser->error_list, delimiter.start, delimiter.end, "Expected identifier or constant after '::'");
+                    yp_diagnostic_list_append(&parser->allocator, &parser->error_list, delimiter.start, delimiter.end, "Expected identifier or constant after '::'");
                     yp_node_t *child = (yp_node_t *) yp_missing_node_create(parser, delimiter.start, delimiter.end);
                     return (yp_node_t *)yp_constant_path_node_create(parser, node, &delimiter, child);
                 }
@@ -13433,7 +13437,7 @@ parse_expression(yp_parser_t *parser, yp_binding_power_t binding_power, const ch
     // parse_expression_prefix is going to be a missing node. In that case we need
     // to add the error message to the parser's error list.
     if (YP_NODE_TYPE_P(node, YP_NODE_MISSING_NODE)) {
-        yp_diagnostic_list_append(&parser->error_list, recovery.end, recovery.end, message);
+        yp_diagnostic_list_append(&parser->allocator, &parser->error_list, recovery.end, recovery.end, message);
         return node;
     }
 
@@ -13569,6 +13573,7 @@ yp_parser_init(yp_parser_t *parser, const char *source, size_t size, const char 
             .stack = {{ .mode = YP_LEX_DEFAULT }},
             .current = &parser->lex_modes.stack[0],
         },
+        .allocator = yp_allocator_init(100),
         .start = source,
         .end = source + size,
         .previous = { .type = YP_TOKEN_EOF, .start = source, .end = source },
@@ -13654,14 +13659,14 @@ yp_parser_register_encoding_decode_callback(yp_parser_t *parser, yp_encoding_dec
 
 // Free all of the memory associated with the comment list.
 static inline void
-yp_comment_list_free(yp_list_t *list) {
+yp_comment_list_free(yp_allocator_t *allocator, yp_list_t *list) {
     yp_list_node_t *node, *next;
 
     for (node = list->head; node != NULL; node = next) {
         next = node->next;
 
         yp_comment_t *comment = (yp_comment_t *) node;
-        free(comment);
+        yp_free(allocator, comment);
     }
 }
 
@@ -13669,11 +13674,11 @@ yp_comment_list_free(yp_list_t *list) {
 YP_EXPORTED_FUNCTION void
 yp_parser_free(yp_parser_t *parser) {
     yp_string_free(&parser->filepath_string);
-    yp_diagnostic_list_free(&parser->error_list);
-    yp_diagnostic_list_free(&parser->warning_list);
-    yp_comment_list_free(&parser->comment_list);
-    yp_constant_pool_free(&parser->constant_pool);
-    yp_newline_list_free(&parser->newline_list);
+    yp_diagnostic_list_free(&parser->allocator, &parser->error_list);
+    yp_diagnostic_list_free(&parser->allocator, &parser->warning_list);
+    yp_comment_list_free(&parser->allocator, &parser->comment_list);
+    yp_constant_pool_free(&parser->allocator, &parser->constant_pool);
+    yp_newline_list_free(&parser->allocator, &parser->newline_list);
 
     while (parser->lex_modes.index >= YP_LEX_STACK_SIZE) {
         lex_mode_pop(parser);

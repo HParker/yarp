@@ -141,7 +141,6 @@ yp_constant_pool_insert(yp_constant_pool_t *pool, const char *start, size_t leng
 }
 
 // Free the memory associated with a constant pool.
-void
-yp_constant_pool_free(yp_constant_pool_t *pool) {
-    free(pool->constants);
+void yp_constant_pool_free(yp_allocator_t *allocator, yp_constant_pool_t *pool) {
+    yp_free(allocator, pool->constants);
 }

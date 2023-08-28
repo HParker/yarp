@@ -124,6 +124,6 @@ yp_newline_list_line_column(yp_newline_list_t *list, const char *cursor) {
 
 // Free the internal memory allocated for the newline list.
 void
-yp_newline_list_free(yp_newline_list_t *list) {
-    free(list->offsets);
+yp_newline_list_free(yp_allocator_t *allocator, yp_newline_list_t *list) {
+    yp_free(allocator, list->offsets);
 }

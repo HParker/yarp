@@ -13114,7 +13114,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
             // to introduce local variables for it based on its named capture groups.
             if (YP_NODE_TYPE_P(node, YP_NODE_REGULAR_EXPRESSION_NODE)) {
                 yp_string_list_t named_captures;
-                yp_string_list_init(&named_captures);
+                yp_string_list_init(&parser->allocator, &named_captures);
 
                 yp_location_t *content_loc = &((yp_regular_expression_node_t *) node)->content_loc;
 
@@ -13127,7 +13127,7 @@ parse_expression_infix(yp_parser_t *parser, yp_node_t *node, yp_binding_power_t 
                     }
                 }
 
-                yp_string_list_free(&named_captures);
+                yp_string_list_free(&parser->allocator, &named_captures);
             }
 
             return (yp_node_t *) yp_call_node_binary_create(parser, node, &token, argument);

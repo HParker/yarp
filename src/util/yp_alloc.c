@@ -12,6 +12,12 @@ yp_calloc(yp_allocator_t *allocator, size_t num, size_t size) {
     return calloc(num, size);
 }
 
+void *
+yp_realloc(yp_allocator_t *allocator, void *ptr, size_t size) {
+    (void)allocator;
+    return realloc(ptr, size);
+}
+
 void
 yp_free(yp_allocator_t *allocator, void *ptr) {
     (void)allocator;

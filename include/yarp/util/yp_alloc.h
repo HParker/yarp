@@ -15,8 +15,8 @@ yp_malloc(yp_allocator_t *allocator, size_t size);
 void *
 yp_calloc(yp_allocator_t *allocator, size_t num, size_t size);
 
-// void *
-// yp_realloc(yp_allocator_t *allocator, void *ptr, size_t size);
+void *
+yp_realloc(yp_allocator_t *allocator, void *ptr, size_t size);
 
 void
 yp_free(yp_allocator_t *allocator, void *ptr);

@@ -393,7 +393,7 @@ parse_file(VALUE self, VALUE filepath) {
     VALUE value = parse_input(&input, checked);
     yp_string_free(&allocator, &input);
     yp_allocator_free(&allocator);
-    
+
     return value;
 }
 
@@ -435,10 +435,12 @@ parse_lex_file(VALUE self, VALUE filepath) {
 static VALUE
 named_captures(VALUE self, VALUE source) {
     yp_string_list_t string_list;
-    yp_string_list_init(&string_list);
+    yp_allocator_t allocator = yp_allocator_init(100);
+    yp_string_list_init(&allocator, &string_list);
 
     if (!yp_regexp_named_capture_group_names(RSTRING_PTR(source), RSTRING_LEN(source), &string_list, false, &yp_encoding_utf_8)) {
-        yp_string_list_free(&string_list);
+        yp_string_list_free(&allocator, &string_list);
+        yp_allocator_free(&allocator);
         return Qnil;
     }
 
@@ -448,7 +450,8 @@ named_captures(VALUE self, VALUE source) {
         rb_ary_push(names, rb_str_new(yp_string_source(string), yp_string_length(string)));
     }
 
-    yp_string_list_free(&string_list);
+    yp_string_list_free(&allocator, &string_list);
+    yp_allocator_free(&allocator);
     return names;
 }
 

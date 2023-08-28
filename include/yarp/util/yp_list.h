@@ -16,7 +16,7 @@
 //     } yp_int_node_t;
 //
 //     yp_list_t list = YP_LIST_EMPTY;
-//     yp_int_node_t *node = malloc(sizeof(yp_int_node_t));
+//     yp_int_node_t *node = yp_malloc(allocator, sizeof(yp_int_node_t));
 //     node->value = 5;
 //
 //     yp_list_append(&list, &node->node);

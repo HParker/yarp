@@ -31,7 +31,7 @@ static void
 yp_regexp_parser_named_capture(yp_regexp_parser_t *parser, const char *start, const char *end) {
     yp_string_t string;
     yp_string_shared_init(&string, start, end);
-    yp_string_list_append(parser->named_captures, &string);
+    yp_string_list_append(&parser->allocator, parser->named_captures, &string);
     yp_string_free(&parser->allocator, &string);
 }
 

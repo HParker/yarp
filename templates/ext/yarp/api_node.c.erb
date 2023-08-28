@@ -57,8 +57,8 @@ typedef struct yp_node_stack_node {
 } yp_node_stack_node_t;
 
 static void
-yp_node_stack_push(yp_node_stack_node_t **stack, yp_node_t *visit) {
-    yp_node_stack_node_t *node = malloc(sizeof(yp_node_stack_node_t));
+yp_node_stack_push(yp_allocator_t *allocator, yp_node_stack_node_t **stack, yp_node_t *visit) {
+    yp_node_stack_node_t *node = yp_malloc(allocator, sizeof(yp_node_stack_node_t));
     node->prev = *stack;
     node->visit = visit;
     node->visited = false;
@@ -90,7 +90,7 @@ yp_ast_new(yp_parser_t *parser, yp_node_t *node, rb_encoding *encoding) {
     }
 
     yp_node_stack_node_t *node_stack = NULL;
-    yp_node_stack_push(&node_stack, node);
+    yp_node_stack_push(&parser->allocator, &node_stack, node);
     VALUE value_stack = rb_ary_new();
 
     while (node_stack != NULL) {
@@ -113,10 +113,10 @@ yp_ast_new(yp_parser_t *parser, yp_node_t *node, rb_encoding *encoding) {
                     <%- node.params.each do |param| -%>
                     <%- case param -%>
                     <%- when NodeParam, OptionalNodeParam -%>
-                    yp_node_stack_push(&node_stack, (yp_node_t *) cast-><%= param.name %>);
+                    yp_node_stack_push(&parser->allocator, &node_stack, (yp_node_t *) cast-><%= param.name %>);
                     <%- when NodeListParam -%>
                     for (size_t index = 0; index < cast-><%= param.name %>.size; index++) {
-                        yp_node_stack_push(&node_stack, (yp_node_t *) cast-><%= param.name %>.nodes[index]);
+                        yp_node_stack_push(&parser->allocator, &node_stack, (yp_node_t *) cast-><%= param.name %>.nodes[index]);
                     }
                     <%- end -%>
                     <%- end -%>

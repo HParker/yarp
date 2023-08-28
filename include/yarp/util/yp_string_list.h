@@ -14,16 +14,16 @@ typedef struct {
     size_t capacity;
 } yp_string_list_t;
 
-// Allocate a new yp_string_list_t.
+// Allocate a new yp_string_list_t. TODO: remove
 yp_string_list_t * yp_string_list_alloc(void);
 
 // Initialize a yp_string_list_t with its default values.
-YP_EXPORTED_FUNCTION void yp_string_list_init(yp_string_list_t *string_list);
+YP_EXPORTED_FUNCTION void yp_string_list_init(yp_allocator_t *allocator, yp_string_list_t *string_list);
 
 // Append a yp_string_t to the given string list.
-void yp_string_list_append(yp_string_list_t *string_list, yp_string_t *string);
+void yp_string_list_append(yp_allocator_t *allocator, yp_string_list_t *string_list, yp_string_t *string);
 
 // Free the memory associated with the string list.
-YP_EXPORTED_FUNCTION void yp_string_list_free(yp_string_list_t *string_list);
+YP_EXPORTED_FUNCTION void yp_string_list_free(yp_allocator_t *allocator, yp_string_list_t *string_list);
 
 #endif

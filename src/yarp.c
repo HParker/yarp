@@ -643,7 +643,7 @@ yp_statements_node_body_append(yp_statements_node_t *node, yp_node_t *statement)
 // implement our own arena allocation.
 static inline void *
 yp_alloc_node(YP_ATTRIBUTE_UNUSED yp_parser_t *parser, size_t size) {
-    void *memory = calloc(1, size);
+    void *memory = yp_calloc(&parser->allocator, 1, size);
     if (memory == NULL) {
         fprintf(stderr, "Failed to allocate %zu bytes\n", size);
         abort();
@@ -7932,13 +7932,13 @@ parse_target(yp_parser_t *parser, yp_node_t *target) {
                 // the previous method name in, and append an =.
                 size_t length = yp_string_length(&call->name);
 
-                char *name = calloc(length + 2, sizeof(char));
+                char *name = yp_calloc(&parser->allocator, length + 2, sizeof(char));
                 if (name == NULL) return NULL;
 
                 snprintf(name, length + 2, "%.*s=", (int) length, yp_string_source(&call->name));
 
                 // Now switch the name to the new string.
-                yp_string_free(&call->name);
+                yp_string_free(&parser->allocator, &call->name);
                 yp_string_owned_init(&call->name, name, length + 1);
 
                 return target;
@@ -7954,7 +7954,7 @@ parse_target(yp_parser_t *parser, yp_node_t *target) {
                 (call->block == NULL)
             ) {
                 // Free the previous name and replace it with "[]=".
-                yp_string_free(&call->name);
+                yp_string_free(&parser->allocator, &call->name);
                 yp_string_constant_init(&call->name, "[]=", 3);
                 return target;
             }
@@ -8089,13 +8089,13 @@ parse_write(yp_parser_t *parser, yp_node_t *target, yp_token_t *operator, yp_nod
                 // the previous method name in, and append an =.
                 size_t length = yp_string_length(&call->name);
 
-                char *name = calloc(length + 2, sizeof(char));
+                char *name = yp_calloc(&parser->allocator, length + 2, sizeof(char));
                 if (name == NULL) return NULL;
 
                 snprintf(name, length + 2, "%.*s=", (int) length, yp_string_source(&call->name));
 
                 // Now switch the name to the new string.
-                yp_string_free(&call->name);
+                yp_string_free(&parser->allocator, &call->name);
                 yp_string_owned_init(&call->name, name, length + 1);
 
                 return target;
@@ -8118,7 +8118,7 @@ parse_write(yp_parser_t *parser, yp_node_t *target, yp_token_t *operator, yp_nod
                 target->location.end = value->location.end;
 
                 // Free the previous name and replace it with "[]=".
-                yp_string_free(&call->name);
+                yp_string_free(&parser->allocator, &call->name);
                 yp_string_constant_init(&call->name, "[]=", 3);
                 return target;
             }
@@ -13673,7 +13673,7 @@ yp_comment_list_free(yp_allocator_t *allocator, yp_list_t *list) {
 // Free any memory associated with the given parser.
 YP_EXPORTED_FUNCTION void
 yp_parser_free(yp_parser_t *parser) {
-    yp_string_free(&parser->filepath_string);
+    yp_string_free(&parser->allocator, &parser->filepath_string);
     yp_diagnostic_list_free(&parser->allocator, &parser->error_list);
     yp_diagnostic_list_free(&parser->allocator, &parser->warning_list);
     yp_comment_list_free(&parser->allocator, &parser->comment_list);

@@ -53,7 +53,7 @@ YP_EXPORTED_FUNCTION size_t yp_string_length(const yp_string_t *string);
 YP_EXPORTED_FUNCTION const char * yp_string_source(const yp_string_t *string);
 
 // Free the associated memory of the given string.
-YP_EXPORTED_FUNCTION void yp_string_free(yp_string_t *string);
+YP_EXPORTED_FUNCTION void yp_string_free(yp_allocator_t *allocator, yp_string_t *string);
 
 // Returns the size of the yp_string_t struct. This is necessary to allocate the
 // correct amount of memory in the FFI backend.

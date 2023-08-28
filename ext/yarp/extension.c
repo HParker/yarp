@@ -90,12 +90,15 @@ dump(int argc, VALUE *argv, VALUE self) {
 static VALUE
 dump_file(VALUE self, VALUE filepath) {
     yp_string_t input;
+    yp_allocator_t allocator = yp_allocator_init(100);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
 
     VALUE value = dump_input(&input, checked);
-    yp_string_free(&input);
+    yp_string_free(&allocator, &input);
+
+    yp_allocator_free(&allocator);
 
     return value;
 }
@@ -310,13 +313,15 @@ lex(int argc, VALUE *argv, VALUE self) {
 static VALUE
 lex_file(VALUE self, VALUE filepath) {
     yp_string_t input;
+    yp_allocator_t allocator = yp_allocator_init(100);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
 
     VALUE value = parse_lex_input(&input, checked, false);
-    yp_string_free(&input);
+    yp_string_free(&allocator, &input);
 
+    yp_allocator_free(&allocator);
     return value;
 }
 
@@ -380,13 +385,15 @@ parse(int argc, VALUE *argv, VALUE self) {
 static VALUE
 parse_file(VALUE self, VALUE filepath) {
     yp_string_t input;
+    yp_allocator_t allocator = yp_allocator_init(100);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
 
     VALUE value = parse_input(&input, checked);
-    yp_string_free(&input);
-
+    yp_string_free(&allocator, &input);
+    yp_allocator_free(&allocator);
+    
     return value;
 }
 
@@ -406,12 +413,14 @@ parse_lex(int argc, VALUE *argv, VALUE self) {
 static VALUE
 parse_lex_file(VALUE self, VALUE filepath) {
     yp_string_t input;
+    yp_allocator_t allocator = yp_allocator_init(100);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
 
     VALUE value = parse_lex_input(&input, checked, true);
-    yp_string_free(&input);
+    yp_string_free(&allocator, &input);
+    yp_allocator_free(&allocator);
 
     return value;
 }
@@ -448,13 +457,16 @@ named_captures(VALUE self, VALUE source) {
 static VALUE
 unescape(VALUE source, yp_unescape_type_t unescape_type) {
     yp_string_t result;
+    yp_allocator_t allocator = yp_allocator_init(100);
 
     if (yp_unescape_string(RSTRING_PTR(source), RSTRING_LEN(source), unescape_type, &result)) {
         VALUE str = rb_str_new(yp_string_source(&result), yp_string_length(&result));
-        yp_string_free(&result);
+        yp_string_free(&allocator, &result);
+        yp_allocator_free(&allocator);
         return str;
     } else {
-        yp_string_free(&result);
+        yp_string_free(&allocator, &result);
+        yp_allocator_free(&allocator);
         return Qnil;
     }
 }

@@ -90,9 +90,9 @@ yp_string_source(const yp_string_t *string) {
 
 // Free the associated memory of the given string.
 YP_EXPORTED_FUNCTION void
-yp_string_free(yp_string_t *string) {
+yp_string_free(yp_allocator_t *allocator, yp_string_t *string) {
     if (string->type == YP_STRING_OWNED) {
-        free(string->source);
+        yp_free(allocator, string->source);
     } else if (string->type == YP_STRING_MAPPED && string->length) {
         void *memory = (void *) string->source;
         #if defined(_WIN32)

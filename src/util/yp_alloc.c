@@ -6,6 +6,12 @@ yp_malloc(yp_allocator_t *allocator, size_t size) {
     return malloc(size);
 }
 
+void *
+yp_calloc(yp_allocator_t *allocator, size_t num, size_t size) {
+    (void)allocator;
+    return calloc(num, size);
+}
+
 void
 yp_free(yp_allocator_t *allocator, void *ptr) {
     (void)allocator;
@@ -19,4 +25,9 @@ yp_allocator_init(size_t size) {
         .memory = malloc(sizeof(char) * size)
     };
     return allocator;
+}
+
+void
+yp_allocator_free(yp_allocator_t *allocator) {
+    free(allocator->memory);
 }

@@ -1,4 +1,5 @@
 #include "yarp/regexp.h"
+#include "yarp/util/yp_alloc.h"
 
 // This is the parser that is going to handle parsing regular expressions.
 typedef struct {
@@ -8,6 +9,7 @@ typedef struct {
     yp_string_list_t *named_captures;
     bool encoding_changed;
     yp_encoding_t *encoding;
+    yp_allocator_t allocator;
 } yp_regexp_parser_t;
 
 // This initializes a new parser with the given source.
@@ -19,7 +21,8 @@ yp_regexp_parser_init(yp_regexp_parser_t *parser, const char *start, const char 
         .end = end,
         .named_captures = named_captures,
         .encoding_changed = encoding_changed,
-        .encoding = encoding
+        .encoding = encoding,
+        .allocator = yp_allocator_init(100)
     };
 }
 
@@ -29,7 +32,7 @@ yp_regexp_parser_named_capture(yp_regexp_parser_t *parser, const char *start, co
     yp_string_t string;
     yp_string_shared_init(&string, start, end);
     yp_string_list_append(parser->named_captures, &string);
-    yp_string_free(&string);
+    yp_string_free(&parser->allocator, &string);
 }
 
 // Returns true if the next character is the end of the source.

@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+require 'benchmark'
 
 module YARP
   class LexTask
@@ -295,6 +296,21 @@ task "download:topgems" do
   workers.each(&:join)
 end
 
+task "parse_only:topgems": ["download:topgems", :compile] do
+  require "yarp"
+  files = Dir["#{TOP_100_GEMS_DIR}/**/*.rb"].reject do |filepath|
+    TOP_100_GEMS_INVALID_SYNTAX_PREFIXES.any? { |prefix| filepath.start_with?(prefix) }
+  end
+
+  Benchmark.bm do |x|
+    x.report { 
+      files.each do |filepath|
+        YARP.parse_file(filepath)
+      end
+    }
+  end
+end
+
 # This task parses each .rb file of the top 100 gems with YARP and ensures they parse
 # successfully (unless they are invalid syntax as confirmed by "ruby -c").
 # It also does some sanity check for every location recorded in the AST.
@@ -366,6 +382,7 @@ task "lex:topgems": ["download:topgems", :compile] do
     end
     lex_task = YARP::LexTask.new(todos)
     Dir[File.join(directory, "**", "*.rb")].each do |filepath|
+      # puts "starting #{filepath}"
       lex_task.compare(filepath)
     end
 

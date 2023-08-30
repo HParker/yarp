@@ -90,7 +90,8 @@ dump(int argc, VALUE *argv, VALUE self) {
 static VALUE
 dump_file(VALUE self, VALUE filepath) {
     yp_string_t input;
-    yp_allocator_t allocator = yp_allocator_init(0);
+    yp_allocator_t allocator;
+    yp_allocator_init(&allocator, 0);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
@@ -313,7 +314,8 @@ lex(int argc, VALUE *argv, VALUE self) {
 static VALUE
 lex_file(VALUE self, VALUE filepath) {
     yp_string_t input;
-    yp_allocator_t allocator = yp_allocator_init(0);
+    yp_allocator_t allocator;
+    yp_allocator_init(&allocator, 0);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
@@ -385,7 +387,8 @@ parse(int argc, VALUE *argv, VALUE self) {
 static VALUE
 parse_file(VALUE self, VALUE filepath) {
     yp_string_t input;
-    yp_allocator_t allocator = yp_allocator_init(0);
+    yp_allocator_t allocator;
+    yp_allocator_init(&allocator, 0);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
@@ -413,7 +416,8 @@ parse_lex(int argc, VALUE *argv, VALUE self) {
 static VALUE
 parse_lex_file(VALUE self, VALUE filepath) {
     yp_string_t input;
-    yp_allocator_t allocator = yp_allocator_init(0);
+    yp_allocator_t allocator;
+    yp_allocator_init(&allocator, 0);
 
     const char *checked = check_string(filepath);
     if (!yp_string_mapped_init(&input, checked)) return Qnil;
@@ -435,7 +439,8 @@ parse_lex_file(VALUE self, VALUE filepath) {
 static VALUE
 named_captures(VALUE self, VALUE source) {
     yp_string_list_t string_list;
-    yp_allocator_t allocator = yp_allocator_init(0);
+    yp_allocator_t allocator;
+    yp_allocator_init(&allocator, 0);
     yp_string_list_init(&allocator, &string_list);
 
     if (!yp_regexp_named_capture_group_names(RSTRING_PTR(source), RSTRING_LEN(source), &string_list, false, &yp_encoding_utf_8)) {
@@ -460,7 +465,8 @@ named_captures(VALUE self, VALUE source) {
 static VALUE
 unescape(VALUE source, yp_unescape_type_t unescape_type) {
     yp_string_t result;
-    yp_allocator_t allocator = yp_allocator_init(0);
+    yp_allocator_t allocator;
+    yp_allocator_init(&allocator, 0);
 
     if (yp_unescape_string(RSTRING_PTR(source), RSTRING_LEN(source), unescape_type, &result)) {
         VALUE str = rb_str_new(yp_string_source(&result), yp_string_length(&result));

@@ -421,7 +421,7 @@ debug_lex_state_set(yp_parser_t *parser, yp_lex_state_t state, char const * call
 // Retrieve the constant pool id for the given location.
 static inline yp_constant_id_t
 yp_parser_constant_id_location(yp_parser_t *parser, const char *start, const char *end) {
-    return yp_constant_pool_insert(&parser->constant_pool, start, (size_t) (end - start));
+    return yp_constant_pool_insert(&parser->allocator, &parser->constant_pool, start, (size_t) (end - start));
 }
 
 // Retrieve the constant pool id for the given token.
@@ -13573,7 +13573,6 @@ yp_parser_init(yp_parser_t *parser, const char *source, size_t size, const char 
             .stack = {{ .mode = YP_LEX_DEFAULT }},
             .current = &parser->lex_modes.stack[0],
         },
-        .allocator = yp_allocator_init(0),
         .start = source,
         .end = source + size,
         .previous = { .type = YP_TOKEN_EOF, .start = source, .end = source },
@@ -13598,7 +13597,7 @@ yp_parser_init(yp_parser_t *parser, const char *source, size_t size, const char 
         .constant_pool = YP_CONSTANT_POOL_EMPTY,
         .newline_list = YP_NEWLINE_LIST_EMPTY
     };
-
+    yp_allocator_init(&parser->allocator, 0);
     yp_accepts_block_stack_push(parser, true);
 
     // Initialize the constant pool. We're going to completely guess as to the
@@ -13616,7 +13615,7 @@ yp_parser_init(yp_parser_t *parser, const char *source, size_t size, const char 
     // This ratio will need to change if we add more constants to the constant
     // pool for another node type.
     size_t constant_size = size / 95;
-    yp_constant_pool_init(&parser->constant_pool, constant_size < 4 ? 4 : constant_size);
+    yp_constant_pool_init(&parser->allocator, &parser->constant_pool, constant_size < 4 ? 4 : constant_size);
 
     // Initialize the newline list. Similar to the constant pool, we're going to
     // guess at the number of newlines that we'll need based on the size of the

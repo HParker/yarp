@@ -21,9 +21,9 @@ yp_regexp_parser_init(yp_regexp_parser_t *parser, const char *start, const char 
         .end = end,
         .named_captures = named_captures,
         .encoding_changed = encoding_changed,
-        .encoding = encoding,
-        .allocator = yp_allocator_init(0)
+        .encoding = encoding
     };
+    yp_allocator_init(&parser->allocator, 0);
 }
 
 // This appends a new string to the list of named captures.

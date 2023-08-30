@@ -37,7 +37,7 @@ yp_constant_id_list_includes(yp_constant_id_list_t *list, yp_constant_id_t id);
 size_t yp_constant_id_list_memsize(yp_constant_id_list_t *list);
 
 // Free the memory associated with a list of constant ids.
-void yp_constant_id_list_free(yp_constant_id_list_t *list);
+void yp_constant_id_list_free(yp_allocator_t *allocator, yp_constant_id_list_t *list);
 
 typedef struct {
     yp_constant_id_t id;
@@ -56,11 +56,11 @@ typedef struct {
 #define YP_CONSTANT_POOL_EMPTY ((yp_constant_pool_t) { .constants = NULL, .size = 0, .capacity = 0 })
 
 // Initialize a new constant pool with a given capacity.
-bool yp_constant_pool_init(yp_constant_pool_t *pool, size_t capacity);
+bool yp_constant_pool_init(yp_allocator_t *allocator, yp_constant_pool_t *pool, size_t capacity);
 
 // Insert a constant into a constant pool. Returns the id of the constant, or 0
 // if any potential calls to resize fail.
-yp_constant_id_t yp_constant_pool_insert(yp_constant_pool_t *pool, const char *start, size_t length);
+yp_constant_id_t yp_constant_pool_insert(yp_allocator_t *allocator, yp_constant_pool_t *pool, const char *start, size_t length);
 
 // Free the memory associated with a constant pool.
 void yp_constant_pool_free(yp_allocator_t *allocator, yp_constant_pool_t *pool);

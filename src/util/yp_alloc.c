@@ -1,20 +1,54 @@
+#include <assert.h>
 #include "yarp/util/yp_alloc.h"
 
-// 16mb default pool size as a "good guess" for big enough for all files
-#define DEFAULT_POOL_SIZE 16000
+#define DEFAULT_POOL_SIZE 32768 // 16384
 #define USE_ARENA 1
+
+void
+yp_ensure_available_memory(yp_allocator_t *allocator, size_t size) {
+    if (allocator->pool->size + size >= allocator->pool->capacity) {
+        allocator->pool_count++;
+
+        yp_memory_pool_t *prev_pool = allocator->pool;
+        allocator->pool = yp_memory_pool_init(DEFAULT_POOL_SIZE);
+        allocator->pool->prev = prev_pool;
+    }
+}
+
+yp_memory_pool_t *
+yp_memory_pool_init(size_t capacity) {
+    yp_memory_pool_t * pool = malloc(sizeof(yp_memory_pool_t));
+    pool->capacity = capacity;
+    pool->size = 0;
+    pool->prev = NULL;
+    pool->memory = malloc(capacity);
+    return pool;
+}
 
 void *
 yp_malloc(yp_allocator_t *allocator, size_t size) {
+    size = (size + 7) & ~7UL;
+
     if (USE_ARENA) {
-        size = (size + 7) & ~7UL;
-        allocator->size += size;
-        yp_assure_available_memory(allocator, size);
+        if (size >= DEFAULT_POOL_SIZE) {
+            yp_memory_pool_t *large_pool = yp_memory_pool_init(size + 1);
+            if (allocator->large_pool == NULL) {
+                allocator->large_pool = large_pool;
+            } else {
+                yp_memory_pool_t *prev_pool = allocator->large_pool;
+                allocator->large_pool = large_pool;
+                allocator->large_pool->prev = prev_pool;
+            }
+            return large_pool->memory;
+        } else {
+            allocator->size += size;
+            yp_ensure_available_memory(allocator, size);
 
-        void *ptr = allocator->pools[allocator->pool_count].memory + allocator->pools[allocator->pool_count].size;
-        allocator->pools[allocator->pool_count].size += size;
+            void *ptr = allocator->pool->memory + allocator->pool->size;
+            allocator->pool->size += size;
 
-        return ptr;
+            return ptr;
+        }
     } else {
         return malloc(size);
     }
@@ -23,7 +57,12 @@ yp_malloc(yp_allocator_t *allocator, size_t size) {
 void *
 yp_calloc(yp_allocator_t *allocator, size_t num, size_t size) {
     if (USE_ARENA) {
-        return yp_malloc(allocator, num * size);
+        if (num * size < size) {
+            return NULL;
+        }
+        void *ptr = yp_malloc(allocator, num * size);
+        memset(ptr, 0, num * size);
+        return ptr;
     } else {
         return calloc(num, size);
     }
@@ -39,40 +78,33 @@ yp_free(yp_allocator_t *allocator, void *ptr) {
     }
 }
 
-yp_memory_pool_t
-yp_memory_pool_init(size_t capacity) {
-    yp_memory_pool_t pool = {
-        .capacity = capacity,
-        .size = 0,
-        .memory = calloc(1, capacity)
-    };
-    return pool;
-}
-
-yp_allocator_t
-yp_allocator_init(size_t capacity) {
-    yp_allocator_t allocator = {
-        .capacity = capacity,
-        .size = 0,
-        .pool_count = 0,
-    };
-
-    allocator.pools[allocator.pool_count] = yp_memory_pool_init(DEFAULT_POOL_SIZE);
-
-    return allocator;
-}
-
 void
-yp_assure_available_memory(yp_allocator_t *allocator, size_t size) {
-    if (allocator->pools[allocator->pool_count].size + size >= allocator->pools[allocator->pool_count].capacity) {
-        allocator->pool_count++;
-        allocator->pools[allocator->pool_count] = yp_memory_pool_init(DEFAULT_POOL_SIZE);
-    }
+yp_allocator_init(yp_allocator_t *allocator, size_t capacity) {
+    allocator->capacity = capacity;
+    allocator->size = 0;
+    allocator->pool_count = 0;
+    allocator->pool = yp_memory_pool_init(DEFAULT_POOL_SIZE);
+    allocator->large_pool = NULL;
 }
 
 void
 yp_allocator_free(yp_allocator_t *allocator) {
-    for (size_t i = 0; i < allocator->pool_count; i++) {
-        free(allocator->pools[i].memory);
+    (void)allocator;
+    yp_memory_pool_t *pool = allocator->pool;
+
+    while (pool != NULL) {
+        yp_memory_pool_t *prev = pool->prev;
+        free(pool->memory);
+        free(pool);
+        pool = prev;
+    }
+
+    pool = allocator->large_pool;
+
+    while (pool != NULL) {
+        yp_memory_pool_t *prev = pool->prev;
+        free(pool->memory);
+        free(pool);
+        pool = prev;
     }
 }

@@ -22,7 +22,7 @@ yp_regexp_parser_init(yp_regexp_parser_t *parser, const char *start, const char 
         .named_captures = named_captures,
         .encoding_changed = encoding_changed,
         .encoding = encoding,
-        .allocator = yp_allocator_init(100)
+        .allocator = yp_allocator_init(0)
     };
 }
 

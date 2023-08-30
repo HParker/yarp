@@ -3,8 +3,8 @@
 // Initialize a new newline list with the given capacity. Returns true if the
 // allocation of the offsets succeeds, otherwise returns false.
 bool
-yp_newline_list_init(yp_newline_list_t *list, const char *start, size_t capacity) {
-    list->offsets = (size_t *) calloc(capacity, sizeof(size_t));
+yp_newline_list_init(yp_allocator_t *allocator, yp_newline_list_t *list, const char *start, size_t capacity) {
+    list->offsets = (size_t *) yp_calloc(allocator, capacity, sizeof(size_t));
     if (list->offsets == NULL) return false;
 
     list->start = start;
@@ -23,10 +23,15 @@ yp_newline_list_init(yp_newline_list_t *list, const char *start, size_t capacity
 // Append a new offset to the newline list. Returns true if the reallocation of
 // the offsets succeeds (if one was necessary), otherwise returns false.
 bool
-yp_newline_list_append(yp_newline_list_t *list, const char *cursor) {
+yp_newline_list_append(yp_allocator_t *allocator, yp_newline_list_t *list, const char *cursor) {
     if (list->size == list->capacity) {
+        size_t original_capacity = list->capacity * sizeof(size_t);
+        size_t * original_offsets = list->offsets;
+
         list->capacity = (list->capacity * 3) / 2;
-        list->offsets = (size_t *) realloc(list->offsets, list->capacity * sizeof(size_t));
+        list->offsets = (size_t *) yp_malloc(allocator, list->capacity * sizeof(size_t));
+        memcpy(list->offsets, original_offsets, original_capacity);
+
         if (list->offsets == NULL) return false;
     }
 
@@ -41,11 +46,11 @@ yp_newline_list_append(yp_newline_list_t *list, const char *cursor) {
 
 // Conditionally append a new offset to the newline list, if the value passed in is a newline.
 bool
-yp_newline_list_check_append(yp_newline_list_t *list, const char *cursor) {
+yp_newline_list_check_append(yp_allocator_t *allocator, yp_newline_list_t *list, const char *cursor) {
     if (*cursor != '\n') {
         return true;
     }
-    return yp_newline_list_append(list, cursor);
+    return yp_newline_list_append(allocator, list, cursor);
 }
 
 // Returns the line and column of the given offset, assuming we don't have any

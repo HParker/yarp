@@ -18,9 +18,11 @@ yp_string_list_init(yp_allocator_t *allocator, yp_string_list_t *string_list) {
 void
 yp_string_list_append(yp_allocator_t *allocator, yp_string_list_t *string_list, yp_string_t *string) {
     if (string_list->length + 1 > string_list->capacity) {
+        yp_string_t * original_string = string_list->strings;
         string_list->capacity *= 2;
         // TODO: do realloc before commiting
-        string_list->strings = (yp_string_t *) yp_realloc(allocator, string_list->strings, string_list->capacity * sizeof(yp_string_t));
+        string_list->strings = (yp_string_t *) yp_malloc(allocator, string_list->capacity * sizeof(yp_string_t));
+        memcpy(string_list->strings, original_string, (string_list->length + 1) * sizeof(yp_string_t));
     }
 
     string_list->strings[string_list->length++] = *string;
